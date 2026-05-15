@@ -159,6 +159,12 @@ def start_run(run_id: str, competitors: list[str]) -> None:
                 "error_message": None,
             }
         )
+    # Broadcast the run start via SSE
+    _broadcast_event("run_started", {
+        "run_id": run_id,
+        "competitors": competitors,
+        "status": "running",
+    })
 
 
 def get_status_response() -> dict[str, Any]:
@@ -192,24 +198,37 @@ def get_spec_status_response() -> dict[str, Any]:
 
 
 def get_competitors_response() -> list[dict[str, Any]]:
-    """Build competitor card data from last run result or defaults."""
-    from competeiq.config import get_settings
+    """Build competitor card data from tracked competitors + last run result."""
+    # Primary source: tracked competitors from DB
+    tracked = get_tracked_domains()
 
-    settings = get_settings()
     with _state_lock:
         result = _state.get("last_run_result") or {}
-        competitors = _state["competitors"] or result.get("competitors") or settings.default_competitors
+        # Fall back to running state or config defaults
+        if not tracked:
+            from competeiq.config import get_settings
+            settings = get_settings()
+            tracked = _state["competitors"] or result.get("competitors") or settings.default_competitors
         last_run = _state.get("last_run")
 
     signals: dict[str, list] = result.get("signals") or {}
-    analysis: dict[str, str] = result.get("analysis") or {}
+    analysis: dict[str, Any] = result.get("analysis") or {}
     report_urls: dict[str, str] = result.get("report_urls") or {}
 
     cards: list[dict[str, Any]] = []
-    for comp in competitors:
+    for comp in tracked:
         signal_list = signals.get(comp, [])
         signal_count = len(signal_list) if isinstance(signal_list, list) else 0
-        top_insight = (analysis.get(comp) or "").strip()
+
+        # Extract top_insight from analysis (can be dict or string)
+        comp_analysis = analysis.get(comp)
+        if isinstance(comp_analysis, dict):
+            top_insight = (comp_analysis.get("top_insight") or comp_analysis.get("summary") or "").strip()
+        elif isinstance(comp_analysis, str):
+            top_insight = comp_analysis.strip()
+        else:
+            top_insight = ""
+
         if not top_insight and signal_count:
             top_insight = f"{signal_count} change{'s' if signal_count != 1 else ''} detected"
         if not top_insight:
