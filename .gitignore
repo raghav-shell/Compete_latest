@@ -1,0 +1,39 @@
+# OS
+.DS_Store
+
+# Backend (Python)
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.env
+*.pem
+*.key
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Frontend (Node/Next.js)
+node_modules/
+.next/
+.env*.local
+.vercel/
+.snowflake/
+.v0-trash/
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
