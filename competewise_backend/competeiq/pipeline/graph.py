@@ -8,11 +8,10 @@ import json
 from pathlib import Path
 from langgraph.graph import END, START, StateGraph
 from tavily import TavilyClient
-import google.generativeai as genai
 
 from competeiq.config import get_settings
 from competeiq.pipeline.state import GraphState, create_initial_state
-from competeiq.utils.llm import generate_with_retry
+from competeiq.utils.llm import generate_with_retry, get_llm_client
 
 # ---------------------------------------------------------------------------
 # SECTION 1: Imports (stdlib + third-party; config via competeiq.config)
@@ -28,19 +27,18 @@ logger = logging.getLogger(__name__)
 
 async def scout_agent(state: GraphState) -> GraphState:
     """
-    Crawl competitor websites using the Tavily API and extract structured JSON with Gemini.
+    Crawl competitor websites using the Tavily API and extract structured JSON with Claude Haiku.
     """
     settings = get_settings()
 
-    if not settings.tavily_api_key or not settings.gemini_api_key:
-        msg = "Scout agent: TAVILY_API_KEY or GEMINI_API_KEY not configured"
+    if not settings.tavily_api_key or not settings.g0i_api_key:
+        msg = "Scout agent: TAVILY_API_KEY or G0I_API_KEY not configured"
         logger.error(msg)
         state["errors"].append(msg)
         return state
 
     client = TavilyClient(api_key=settings.tavily_api_key)
-    genai.configure(api_key=settings.gemini_api_key)
-    model = genai.GenerativeModel("gemini-flash-latest")
+    llm_client = get_llm_client(settings.g0i_api_key)
 
     state["needs_reflection"] = False
     logger.info("Scout agent: Starting crawl for %d competitors", len(state["competitors"]))
@@ -90,15 +88,15 @@ Each key must map to an array of objects with exactly these string keys: "text",
 If nothing is found for a category, return an empty list. Be factual. Do not invent findings."""
 
             logger.info("Scout: Generating structured JSON for %s", competitor)
-            response = await asyncio.to_thread(
+            response_text = await asyncio.to_thread(
                 generate_with_retry,
-                model,
+                llm_client,
                 prompt,
-                generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
+                json_mode=True,
             )
             
             try:
-                parsed = json.loads(response.text)
+                parsed = json.loads(response_text)
                 return competitor, parsed, None
             except Exception as parse_exc:
                 logger.error("Scout: Failed to parse JSON for %s: %s", competitor, parse_exc)
@@ -129,7 +127,7 @@ def _process_signal_for_competitor(
     current_content: dict,
 ) -> tuple[list[dict], list[str]]:
     """
-    Diff current JSON against the latest snapshot using Gemini.
+    Diff current JSON against the latest snapshot using Claude Haiku.
     Uses Supabase for snapshot storage.
     """
     from competeiq.db import get_latest_snapshot, save_snapshot
@@ -146,8 +144,7 @@ def _process_signal_for_competitor(
             signals = [{"change_type": "baseline", "description": "Establishing baseline (first scan)", "significance": "low", "reasoning": "First run"}]
         else:
             settings = get_settings()
-            genai.configure(api_key=settings.gemini_api_key)
-            model = genai.GenerativeModel("gemini-flash-latest")
+            llm_client = get_llm_client(settings.g0i_api_key)
             
             prompt = f"""You are a Signal agent. Compare two versions of a competitor's web presence.
 PREVIOUS: {previous_content_str[:15000]}
@@ -160,14 +157,14 @@ Return ONLY a JSON array of objects (no markdown, no backticks).
 Each object must have these exact keys: "change_type", "description", "significance" (high, medium, or low), "reasoning".
 If nothing meaningful changed, return an empty array []."""
             
-            response = generate_with_retry(
-                model,
+            response_text = generate_with_retry(
+                llm_client,
                 prompt,
-                generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
+                json_mode=True,
             )
             
             try:
-                signals = json.loads(response.text)
+                signals = json.loads(response_text)
                 if not isinstance(signals, list):
                     signals = []
             except Exception as e:

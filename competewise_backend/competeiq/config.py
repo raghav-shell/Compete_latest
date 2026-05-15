@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     )
 
     anthropic_api_key: str = ""
-    gemini_api_key: str = ""
+    g0i_api_key: str = ""
     groq_api_key: str = ""
     tavily_api_key: str = ""
     slack_webhook_url: str = ""
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "anthropic_api_key",
-        "gemini_api_key",
+        "g0i_api_key",
         "groq_api_key",
         "tavily_api_key",
         "slack_webhook_url",

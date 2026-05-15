@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
+import json
+import asyncio
 import logging
 
 from competeiq.config import get_settings
 from competeiq.pipeline.state import GraphState
 from competeiq.services.slack_service import SlackService
-from competeiq.utils.llm import generate_with_retry
+from competeiq.utils.llm import generate_with_retry, get_llm_client
 
 logger = logging.getLogger(__name__)
 
 
-import json
-import asyncio
-import google.generativeai as genai
-
 async def notifier_agent(state: GraphState) -> GraphState:
     """
-    Post the competitive brief summary to Slack using a Gemini-generated Block Kit payload.
+    Post the competitive brief summary to Slack using a Claude Haiku-generated Block Kit payload.
     """
     settings = get_settings()
 
@@ -26,14 +24,13 @@ async def notifier_agent(state: GraphState) -> GraphState:
         logger.warning("Notifier: SLACK_WEBHOOK_URL not set, skipping notification")
         return state
 
-    if not settings.gemini_api_key:
-        msg = "Notifier agent: GEMINI_API_KEY not configured"
+    if not settings.g0i_api_key:
+        msg = "Notifier agent: G0I_API_KEY not configured"
         logger.error(msg)
         state["errors"].append(msg)
         return state
 
-    genai.configure(api_key=settings.gemini_api_key)
-    model = genai.GenerativeModel("gemini-flash-latest")
+    llm_client = get_llm_client(settings.g0i_api_key)
 
     try:
         prompt = f"""You are a Notifier Agent. Format this competitive brief as a Slack Block Kit message.
@@ -49,14 +46,14 @@ ERRORS: {json.dumps(state['errors'])}
 
 Return ONLY valid Slack Block Kit JSON. The root object must have a "blocks" array.
 """
-        response = await asyncio.to_thread(
+        response_text = await asyncio.to_thread(
             generate_with_retry,
-            model,
+            llm_client,
             prompt,
-            generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
+            json_mode=True,
         )
         
-        payload = json.loads(response.text)
+        payload = json.loads(response_text)
         
         slack_service = SlackService(settings.slack_webhook_url)
         success = await slack_service.send_competitive_brief(payload)

@@ -7,12 +7,11 @@ import logging
 from datetime import datetime
 from typing import Any
 
-import google.generativeai as genai
 from notion_client import Client as NotionClient
 
 from competeiq.config import Settings, get_settings
 from competeiq.pipeline.state import GraphState
-from competeiq.utils.llm import generate_with_retry
+from competeiq.utils.llm import generate_with_retry, get_llm_client
 
 # ---------------------------------------------------------------------------
 # SECTION 1: Imports
@@ -39,20 +38,19 @@ def _truncate(text: str, limit: int) -> str:
 
 async def analyst_agent(state: GraphState) -> GraphState:
     """
-    Use Google Gemini to reason about competitor signals and output structured JSON.
+    Use Claude Haiku to reason about competitor signals and output structured JSON.
     """
     settings = get_settings()
 
-    if not settings.gemini_api_key:
-        msg = "Analyst agent: GEMINI_API_KEY is not configured"
+    if not settings.g0i_api_key:
+        msg = "Analyst agent: G0I_API_KEY is not configured"
         logger.error(msg)
         state["errors"].append(msg)
         return state
 
     logger.info("Analyst agent: Reasoning about %d competitors", len(state["competitors"]))
 
-    genai.configure(api_key=settings.gemini_api_key)
-    model = genai.GenerativeModel("gemini-flash-latest")
+    llm_client = get_llm_client(settings.g0i_api_key)
 
     # Fan out!
     async def _analyze_one(c: str) -> tuple[str, dict, str | None]:
@@ -81,15 +79,14 @@ Return ONLY a valid JSON object (no markdown, no backticks) with exactly these k
 """
             logger.info("Analyst: Thinking about %s...", c)
 
-            def call_gemini() -> str:
-                response = generate_with_retry(
-                    model,
+            def call_llm() -> str:
+                return generate_with_retry(
+                    llm_client,
                     prompt,
-                    generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
+                    json_mode=True,
                 )
-                return response.text if response.text else "{}"
 
-            analysis_text = await asyncio.to_thread(call_gemini)
+            analysis_text = await asyncio.to_thread(call_llm)
             
             try:
                 analysis_json = json.loads(analysis_text)
@@ -136,11 +133,8 @@ async def evaluator_agent(state: GraphState) -> GraphState:
     """
     settings = get_settings()
 
-    if not settings.gemini_api_key:
+    if not settings.g0i_api_key:
         return state
-
-    genai.configure(api_key=settings.gemini_api_key)
-    model = genai.GenerativeModel("gemini-flash-latest")
 
     needs_reflection = False
     
@@ -256,7 +250,7 @@ def _get_notion_client(settings: Settings) -> NotionClient:
 
 async def report_agent(state: GraphState) -> GraphState:
     """
-    Generate Markdown using Gemini and create a Notion page with the competitive brief.
+    Generate Markdown using Claude Haiku and create a Notion page with the competitive brief.
     """
     settings = get_settings()
 
@@ -269,16 +263,13 @@ async def report_agent(state: GraphState) -> GraphState:
         state["errors"].append(error_msg)
         return state
 
-    if not settings.gemini_api_key:
-        msg = "Report agent: GEMINI_API_KEY is not configured"
+    if not settings.g0i_api_key:
+        msg = "Report agent: G0I_API_KEY is not configured"
         logger.error(msg)
         state["errors"].append(msg)
         return state
 
-    genai.configure(api_key=settings.gemini_api_key)
-    model = genai.GenerativeModel("gemini-flash-latest")
-
-    logger.info("Report agent: Creating Notion pages for %d competitors", len(state["competitors"]))
+    llm_client = get_llm_client(settings.g0i_api_key)
 
     logger.info("Report agent: Creating Notion pages for %d competitors", len(state["competitors"]))
 
@@ -300,11 +291,10 @@ Write the full Markdown brief. Use # for the main title, ## for major sections a
 Do NOT use bold or italics markers (no ** or *), just plain text structure.
 Keep it concise and strategic."""
 
-            def call_gemini() -> str:
-                response = generate_with_retry(model, prompt)
-                return response.text if response.text else "No report generated."
+            def call_llm() -> str:
+                return generate_with_retry(llm_client, prompt)
 
-            markdown_text = await asyncio.to_thread(call_gemini)
+            markdown_text = await asyncio.to_thread(call_llm)
             blocks = markdown_to_notion_blocks(markdown_text)
 
             notion_url = await asyncio.to_thread(
