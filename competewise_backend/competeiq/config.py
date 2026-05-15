@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     slack_webhook_url: str = ""
     notion_api_key: str = ""
     notion_database_id: str = ""
+    supabase_url: str = ""
+    supabase_key: str = ""
     debug: bool = False
     ngrok_authtoken: str = ""
     competitors: str = "linear.app,notion.so,vercel.com"

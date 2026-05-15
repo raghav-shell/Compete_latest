@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 from threading import Lock
 from typing import Any, AsyncGenerator
-
-RUN_HISTORY_DB = str(Path(__file__).resolve().parent / "db" / "snapshots.db")
 
 _state_lock = Lock()
 _state: dict[str, Any] = {
@@ -247,66 +243,9 @@ def get_competitors_response() -> list[dict[str, Any]]:
         )
     return cards
 
-
-_db_lock = Lock()
-_run_history_initialized = False
-
-
-def _init_run_history_table() -> None:
-    """Create the run_history and tracked_competitors tables if they do not exist."""
-    global _run_history_initialized
-    if _run_history_initialized:
-        return
-
-    db_path = Path(RUN_HISTORY_DB)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with _db_lock:
-        if _run_history_initialized:
-            return
-        conn = sqlite3.connect(RUN_HISTORY_DB)
-        try:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS run_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id TEXT NOT NULL,
-                    competitors TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    error_message TEXT,
-                    signals_found INTEGER DEFAULT 0,
-                    notion_url TEXT,
-                    slack_message TEXT,
-                    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS tracked_competitors (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    domain TEXT NOT NULL UNIQUE,
-                    display_name TEXT NOT NULL,
-                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-            for col, typedef in (
-                ("signals_found", "INTEGER DEFAULT 0"),
-                ("notion_url", "TEXT"),
-                ("slack_message", "TEXT"),
-            ):
-                try:
-                    conn.execute(
-                        f"ALTER TABLE run_history ADD COLUMN {col} {typedef}"
-                    )
-                except sqlite3.OperationalError:
-                    pass
-            conn.commit()
-            _run_history_initialized = True
-        finally:
-            conn.close()
+# ---------------------------------------------------------------------------
+# Persistent storage (Supabase)
+# ---------------------------------------------------------------------------
 
 
 def record_run(
@@ -319,189 +258,68 @@ def record_run(
     notion_url: str | None = None,
     slack_message: str | None = None,
 ) -> None:
-    """Persist a completed pipeline run to SQLite run history."""
-    _init_run_history_table()
-    competitors_csv = ",".join(competitors)
+    """Persist a completed pipeline run to Supabase."""
+    from competeiq.db import insert_run
 
-    with _db_lock:
-        conn = sqlite3.connect(RUN_HISTORY_DB)
-        try:
-            conn.execute(
-                """
-                INSERT INTO run_history (
-                    run_id, competitors, status, error_message,
-                    signals_found, notion_url, slack_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id,
-                    competitors_csv,
-                    status,
-                    error_message,
-                    signals_found,
-                    notion_url,
-                    slack_message,
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+    insert_run(
+        run_id,
+        competitors,
+        status,
+        error_message,
+        signals_found=signals_found,
+        notion_url=notion_url,
+        slack_message=slack_message,
+    )
 
 
 def get_run_history(limit: int = 20) -> list[dict[str, Any]]:
     """Legacy run history for ``GET /api/runs``."""
-    _init_run_history_table()
+    from competeiq.db import get_runs_legacy
 
-    with _db_lock:
-        conn = sqlite3.connect(RUN_HISTORY_DB)
-        conn.row_factory = sqlite3.Row
-        try:
-            cursor = conn.execute(
-                """
-                SELECT run_id, competitors, status, error_message,
-                       started_at, completed_at
-                FROM run_history
-                ORDER BY started_at DESC, id DESC
-                LIMIT ?
-                """,
-                (limit,),
-            )
-            rows = cursor.fetchall()
-        finally:
-            conn.close()
-
-    runs: list[dict[str, Any]] = []
-    for row in rows:
-        competitors_raw = row["competitors"] or ""
-        competitors = [
-            name.strip() for name in competitors_raw.split(",") if name.strip()
-        ]
-        runs.append(
-            {
-                "run_id": row["run_id"],
-                "competitors": competitors,
-                "status": row["status"],
-                "error_message": row["error_message"],
-                "started_at": row["started_at"],
-                "completed_at": row["completed_at"],
-            }
-        )
-    return runs
+    return get_runs_legacy(limit)
 
 
 def get_spec_run_history(limit: int = 10) -> list[dict[str, Any]]:
     """Spec-aligned run history for ``GET /runs``."""
-    _init_run_history_table()
+    from competeiq.db import get_runs_spec
 
-    with _db_lock:
-        conn = sqlite3.connect(RUN_HISTORY_DB)
-        conn.row_factory = sqlite3.Row
-        try:
-            cursor = conn.execute(
-                """
-                SELECT run_id, competitors, status, signals_found,
-                       notion_url, slack_message, started_at
-                FROM run_history
-                ORDER BY started_at DESC, id DESC
-                LIMIT ?
-                """,
-                (limit,),
-            )
-            rows = cursor.fetchall()
-        except sqlite3.OperationalError:
-            return []
-        finally:
-            conn.close()
-
-    runs: list[dict[str, Any]] = []
-    for row in rows:
-        competitors_raw = row["competitors"] or ""
-        competitors = [
-            name.strip() for name in competitors_raw.split(",") if name.strip()
-        ]
-        runs.append(
-            {
-                "id": row["run_id"],
-                "date": row["started_at"],
-                "competitors_count": len(competitors),
-                "signals_found": row["signals_found"] or 0,
-                "status": row["status"],
-                "notion_url": row["notion_url"],
-                "slack_message": row["slack_message"],
-            }
-        )
-    return runs
+    return get_runs_spec(limit)
 
 
 # ---------------------------------------------------------------------------
 # Tracked competitors CRUD
 # ---------------------------------------------------------------------------
 
+
 def add_tracked_competitor(domain: str) -> dict[str, Any]:
     """Add a competitor domain to the tracking list. Returns the new record."""
-    _init_run_history_table()
+    from competeiq.db import insert_competitor
+
     domain = domain.strip().lower()
     display_name = _display_name(domain)
-
-    with _db_lock:
-        conn = sqlite3.connect(RUN_HISTORY_DB)
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.execute(
-                "INSERT OR IGNORE INTO tracked_competitors (domain, display_name) VALUES (?, ?)",
-                (domain, display_name),
-            )
-            conn.commit()
-            row = conn.execute(
-                "SELECT domain, display_name, added_at FROM tracked_competitors WHERE domain = ?",
-                (domain,),
-            ).fetchone()
-        finally:
-            conn.close()
-
-    if row is None:
-        return {"domain": domain, "display_name": display_name, "added_at": None}
-    return dict(row)
+    return insert_competitor(domain, display_name)
 
 
 def remove_tracked_competitor(domain: str) -> bool:
     """Remove a competitor from the tracking list. Returns True if deleted."""
-    _init_run_history_table()
-    domain = domain.strip().lower()
+    from competeiq.db import delete_competitor
 
-    with _db_lock:
-        conn = sqlite3.connect(RUN_HISTORY_DB)
-        try:
-            cursor = conn.execute(
-                "DELETE FROM tracked_competitors WHERE domain = ?",
-                (domain,),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-        finally:
-            conn.close()
+    domain = domain.strip().lower()
+    return delete_competitor(domain)
 
 
 def list_tracked_competitors() -> list[dict[str, Any]]:
     """Return all tracked competitor domains."""
-    _init_run_history_table()
+    from competeiq.db import get_competitors
 
-    with _db_lock:
-        conn = sqlite3.connect(RUN_HISTORY_DB)
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(
-                "SELECT domain, display_name, added_at FROM tracked_competitors ORDER BY added_at ASC"
-            ).fetchall()
-        finally:
-            conn.close()
-
-    return [dict(r) for r in rows]
+    return get_competitors()
 
 
 def get_tracked_domains() -> list[str]:
     """Return just the domain strings for tracked competitors."""
-    return [c["domain"] for c in list_tracked_competitors()]
+    from competeiq.db import get_competitor_domains
+
+    return get_competitor_domains()
 
 
 def seed_default_competitors() -> None:
@@ -515,3 +333,4 @@ def seed_default_competitors() -> None:
     settings = get_settings()
     for domain in settings.default_competitors:
         add_tracked_competitor(domain)
+

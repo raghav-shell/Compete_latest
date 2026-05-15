@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sqlite3
 import json
 from pathlib import Path
 from langgraph.graph import END, START, StateGraph
@@ -18,47 +17,7 @@ from competeiq.pipeline.state import GraphState, create_initial_state
 # SECTION 1: Imports (stdlib + third-party; config via competeiq.config)
 # ---------------------------------------------------------------------------
 
-DEFAULT_SNAPSHOTS_DB = "competeiq/db/snapshots.db"
-
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# SECTION 2: GraphState (see competeiq.pipeline.state)
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# SECTION 3: SQLite Setup Function
-# ---------------------------------------------------------------------------
-
-
-def init_snapshots_db(db_path: str = DEFAULT_SNAPSHOTS_DB) -> None:
-    """
-    Initialize SQLite database for competitor snapshots.
-
-    Creates the parent directory and table if they do not exist.
-
-    Args:
-        db_path: Path to SQLite database file.
-    """
-    path = Path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS competitor_snapshots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            competitor TEXT NOT NULL,
-            snapshot TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    conn.commit()
-    conn.close()
-    logger.info("Snapshots database initialized at %s", db_path)
 
 
 # ---------------------------------------------------------------------------
@@ -139,41 +98,32 @@ If nothing is found for a category, return an empty list. Be factual. Do not inv
     logger.info("Scout agent: Crawl complete")
     return state
 
-
 # ---------------------------------------------------------------------------
 # SECTION 5: Signal Agent Function
 # ---------------------------------------------------------------------------
 
 
 def _process_signal_for_competitor(
-    db_path: str,
     competitor: str,
     current_content: dict,
 ) -> tuple[list[dict], list[str]]:
     """
     Diff current JSON against the latest snapshot using Gemini.
+    Uses Supabase for snapshot storage.
     """
+    from competeiq.db import get_latest_snapshot, save_snapshot
+
     errors: list[str] = []
     signals: list[dict] = []
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
     try:
-        cursor.execute(
-            "SELECT snapshot FROM competitor_snapshots WHERE competitor = ? ORDER BY created_at DESC LIMIT 1",
-            (competitor,),
-        )
-        row = cursor.fetchone()
-        
+        previous_content_str = get_latest_snapshot(competitor)
         current_content_str = json.dumps(current_content)
 
-        if row is None:
+        if previous_content_str is None:
             logger.info("Signal: %s - first run, establishing baseline", competitor)
             signals = [{"change_type": "baseline", "description": "Establishing baseline (first scan)", "significance": "low", "reasoning": "First run"}]
         else:
-            previous_content_str = row[0]
-            
             settings = get_settings()
             genai.configure(api_key=settings.gemini_api_key)
             model = genai.GenerativeModel("gemini-flash-latest")
@@ -202,28 +152,20 @@ If nothing meaningful changed, return an empty array []."""
                 logger.error("Signal: JSON parse error: %s", e)
                 signals = []
 
-        cursor.execute(
-            "INSERT INTO competitor_snapshots (competitor, snapshot) VALUES (?, ?)",
-            (competitor, current_content_str),
-        )
-        conn.commit()
-        logger.info("Signal: Saved snapshot for %s", competitor)
+        # Save current snapshot to Supabase
+        save_snapshot(competitor, current_content_str)
 
     except Exception as exc:
         errors.append(f"Signal failed for {competitor}: {exc}")
         logger.error("Signal failed for %s: %s", competitor, exc)
-    finally:
-        conn.close()
 
     return signals, errors
 
 
 async def signal_agent(state: GraphState) -> GraphState:
     """
-    Diff current competitor data against the latest SQLite snapshot.
+    Diff current competitor data against the latest Supabase snapshot.
     """
-    db_path = DEFAULT_SNAPSHOTS_DB
-
     logger.info(
         "Signal agent: Processing %d competitors",
         len(state["competitors"]),
@@ -233,7 +175,6 @@ async def signal_agent(state: GraphState) -> GraphState:
         current_content = state["raw_data"].get(competitor, {})
         signals, errors = await asyncio.to_thread(
             _process_signal_for_competitor,
-            db_path,
             competitor,
             current_content,
         )
@@ -250,11 +191,6 @@ async def signal_agent(state: GraphState) -> GraphState:
 
 from competeiq.pipeline.analyst_report import analyst_agent, report_agent
 from competeiq.pipeline.notifier import notifier_agent
-
-try:
-    init_snapshots_db()
-except Exception as exc:
-    logger.error("Failed to initialize snapshots DB: %s", exc)
 
 graph = StateGraph(GraphState)
 
@@ -285,6 +221,6 @@ __all__ = [
     "scout_agent",
     "signal_agent",
     "compiled_graph",
-    "init_snapshots_db",
     "create_initial_state",
 ]
+
