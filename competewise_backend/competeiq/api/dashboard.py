@@ -86,8 +86,16 @@ async def run_pipeline(
     Start the full competitive intelligence pipeline (non-blocking).
 
     Uses tracked competitors from DB when body is empty.
-    Falls back to COMPETITORS env if DB is empty.
     """
+    from competeiq.state import get_state
+    
+    current_state = get_state()
+    if current_state.get("status") == "running":
+        raise HTTPException(
+            status_code=409, 
+            detail="Pipeline is already running"
+        )
+
     seed_default_competitors()
     competitors = request.competitors or get_tracked_domains()
     if not competitors:

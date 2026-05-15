@@ -39,10 +39,12 @@ export function getAgentPillState(
   return "pending"
 }
 
-export function formatRelativeTime(iso: string | null): string {
+export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "No runs yet"
 
   const date = new Date(iso)
+  if (isNaN(date.getTime())) return "No runs yet"
+
   const diffMs = Date.now() - date.getTime()
   const diffSec = Math.floor(diffMs / 1000)
 
@@ -57,8 +59,11 @@ export function formatRelativeTime(iso: string | null): string {
   })
 }
 
-export function formatRunTimestamp(iso: string): string {
+export function formatRunTimestamp(iso: string | null | undefined): string {
+  if (!iso) return "Unknown time"
   const date = new Date(iso)
+  if (isNaN(date.getTime())) return "Unknown time"
+
   const now = new Date()
   const isToday = date.toDateString() === now.toDateString()
   const yesterday = new Date(now)

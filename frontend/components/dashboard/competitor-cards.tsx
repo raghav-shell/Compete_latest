@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion"
 import { TrendingUp, AlertTriangle, CheckCircle, Plus, Loader2, X } from "lucide-react"
 import { useState } from "react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { usePipeline } from "@/providers/pipeline-provider"
 import { CompetitorDetailModal } from "./competitor-detail-modal"
@@ -64,8 +65,22 @@ export function CompetitorCards() {
   })
 
   const handleAdd = async () => {
-    const domain = input.trim().toLowerCase()
-    if (!domain || !domain.includes(".")) return
+    let domain = input.trim().toLowerCase()
+    
+    // Extract clean domain from full URLs
+    try {
+      if (domain.startsWith("http")) {
+        domain = new URL(domain).hostname
+      }
+      domain = domain.replace(/^www\./, "").split("/")[0]
+    } catch {
+      // Ignore URL parse errors, fallback to raw input
+    }
+
+    if (!domain || !domain.includes(".")) {
+      toast.error("Please enter a valid domain (e.g. stripe.com)")
+      return
+    }
     setIsAdding(true)
     await addCompetitor(domain)
     setInput("")
@@ -109,7 +124,7 @@ export function CompetitorCards() {
 
               return (
                 <motion.div
-                  key={competitor.id}
+                  key={competitor.domain}
                   layout
                   initial={{ opacity: 0, y: 30, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
