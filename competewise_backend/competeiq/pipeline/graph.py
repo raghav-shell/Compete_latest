@@ -174,9 +174,6 @@ If nothing meaningful changed, return an empty array []."""
                 logger.error("Signal: JSON parse error: %s", e)
                 signals = []
 
-        # Save current snapshot to Supabase
-        save_snapshot(competitor, current_content_str)
-
     except Exception as exc:
         errors.append(f"Signal failed for {competitor}: {exc}")
         logger.error("Signal failed for %s: %s", competitor, exc)

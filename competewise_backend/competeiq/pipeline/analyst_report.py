@@ -316,6 +316,13 @@ Keep it concise and strategic."""
             )
 
             logger.info("Report: Created Notion page for %s at %s", c, notion_url)
+
+            # Persist the final validated raw data as the new historical baseline
+            from competeiq.db import save_snapshot
+            current_content = state["raw_data"].get(c, {})
+            if current_content:
+                save_snapshot(c, json.dumps(current_content))
+
             return c, notion_url, None
 
         except Exception as exc:
