@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, AsyncGenerator
 
 RUN_HISTORY_DB = str(Path(__file__).resolve().parent / "db" / "snapshots.db")
 
@@ -76,13 +78,69 @@ def get_state() -> dict[str, Any]:
 
 
 def update_state(key: str, value: Any) -> None:
-    """Update a single state field (thread-safe)."""
+    """Update a single state field (thread-safe) and broadcast via SSE."""
     with _state_lock:
         _state[key] = value
         if key == "current_step":
             _state["current_agent"] = _step_to_agent(str(value))
         if key == "status" and value in ("completed", "idle"):
             _state["last_run"] = datetime.now(timezone.utc).isoformat()
+
+    # Broadcast to SSE subscribers (skip large blobs like last_run_result)
+    if key != "last_run_result":
+        _broadcast_event("state_update", {"key": key, "value": value})
+
+
+# ---------------------------------------------------------------------------
+# SSE Event Bus
+# ---------------------------------------------------------------------------
+
+_subscribers: list[asyncio.Queue] = []
+_sub_lock = Lock()
+
+
+def _broadcast_event(event_type: str, data: dict[str, Any]) -> None:
+    """Push an event to all active SSE subscribers."""
+    payload = {"type": event_type, "data": data}
+    with _sub_lock:
+        dead: list[asyncio.Queue] = []
+        for q in _subscribers:
+            try:
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
+                dead.append(q)
+        for q in dead:
+            _subscribers.remove(q)
+
+
+async def subscribe_events() -> AsyncGenerator[str, None]:
+    """Yield SSE-formatted strings as pipeline events arrive."""
+    q: asyncio.Queue = asyncio.Queue(maxsize=100)
+    with _sub_lock:
+        _subscribers.append(q)
+    try:
+        # Send initial state snapshot
+        with _state_lock:
+            snapshot = {
+                "status": _state["status"],
+                "current_agent": _state.get("current_agent", "done"),
+                "progress": _state["progress"],
+                "current_step": _state["current_step"],
+                "run_id": _state["run_id"],
+            }
+        yield f"data: {json.dumps({'type': 'snapshot', 'data': snapshot})}\n\n"
+
+        while True:
+            try:
+                event = await asyncio.wait_for(q.get(), timeout=30.0)
+                yield f"data: {json.dumps(event)}\n\n"
+            except asyncio.TimeoutError:
+                # Send keepalive
+                yield ": keepalive\n\n"
+    finally:
+        with _sub_lock:
+            if q in _subscribers:
+                _subscribers.remove(q)
 
 
 def start_run(run_id: str, competitors: list[str]) -> None:
@@ -176,7 +234,7 @@ _run_history_initialized = False
 
 
 def _init_run_history_table() -> None:
-    """Create the run_history table if it does not exist."""
+    """Create the run_history and tracked_competitors tables if they do not exist."""
     global _run_history_initialized
     if _run_history_initialized:
         return
@@ -202,6 +260,16 @@ def _init_run_history_table() -> None:
                     slack_message TEXT,
                     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tracked_competitors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    domain TEXT NOT NULL UNIQUE,
+                    display_name TEXT NOT NULL,
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
@@ -344,3 +412,87 @@ def get_spec_run_history(limit: int = 10) -> list[dict[str, Any]]:
             }
         )
     return runs
+
+
+# ---------------------------------------------------------------------------
+# Tracked competitors CRUD
+# ---------------------------------------------------------------------------
+
+def add_tracked_competitor(domain: str) -> dict[str, Any]:
+    """Add a competitor domain to the tracking list. Returns the new record."""
+    _init_run_history_table()
+    domain = domain.strip().lower()
+    display_name = _display_name(domain)
+
+    with _db_lock:
+        conn = sqlite3.connect(RUN_HISTORY_DB)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO tracked_competitors (domain, display_name) VALUES (?, ?)",
+                (domain, display_name),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT domain, display_name, added_at FROM tracked_competitors WHERE domain = ?",
+                (domain,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+    if row is None:
+        return {"domain": domain, "display_name": display_name, "added_at": None}
+    return dict(row)
+
+
+def remove_tracked_competitor(domain: str) -> bool:
+    """Remove a competitor from the tracking list. Returns True if deleted."""
+    _init_run_history_table()
+    domain = domain.strip().lower()
+
+    with _db_lock:
+        conn = sqlite3.connect(RUN_HISTORY_DB)
+        try:
+            cursor = conn.execute(
+                "DELETE FROM tracked_competitors WHERE domain = ?",
+                (domain,),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+
+def list_tracked_competitors() -> list[dict[str, Any]]:
+    """Return all tracked competitor domains."""
+    _init_run_history_table()
+
+    with _db_lock:
+        conn = sqlite3.connect(RUN_HISTORY_DB)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                "SELECT domain, display_name, added_at FROM tracked_competitors ORDER BY added_at ASC"
+            ).fetchall()
+        finally:
+            conn.close()
+
+    return [dict(r) for r in rows]
+
+
+def get_tracked_domains() -> list[str]:
+    """Return just the domain strings for tracked competitors."""
+    return [c["domain"] for c in list_tracked_competitors()]
+
+
+def seed_default_competitors() -> None:
+    """Seed the tracked_competitors table with defaults from config if empty."""
+    from competeiq.config import get_settings
+
+    existing = list_tracked_competitors()
+    if existing:
+        return
+
+    settings = get_settings()
+    for domain in settings.default_competitors:
+        add_tracked_competitor(domain)

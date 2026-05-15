@@ -63,3 +63,19 @@ export interface LastRunResult {
   slack_sent?: boolean
   errors?: string[]
 }
+
+/** Tracked competitor from DB */
+export interface TrackedCompetitor {
+  domain: string
+  display_name: string
+  added_at: string | null
+}
+
+/** Full detail view for a single competitor */
+export interface CompetitorDetails {
+  domain: string
+  raw_data: Record<string, unknown>
+  signals: Array<Record<string, unknown>>
+  analysis: Record<string, unknown>
+  notion_url: string | null
+}

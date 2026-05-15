@@ -14,26 +14,34 @@ import { toast } from "sonner"
 
 import {
   ApiError,
+  addCompetitor as apiAddCompetitor,
+  removeCompetitor as apiRemoveCompetitor,
   checkBackendHealth,
   fetchCompetitors,
   fetchRuns,
   fetchStatus,
+  fetchTrackedCompetitors,
   getApiBaseUrl,
   startRun,
+  subscribeToEvents,
+  type SSEEvent,
 } from "@/lib/api"
 import { shouldPollStatus } from "@/lib/pipeline-utils"
-import type { CompetitorCard, RunHistoryItem, StatusResponse } from "@/lib/types"
+import type { CompetitorCard, RunHistoryItem, StatusResponse, TrackedCompetitor } from "@/lib/types"
 
 interface PipelineContextValue {
   status: StatusResponse | null
   competitors: CompetitorCard[]
   runs: RunHistoryItem[]
+  trackedCompetitors: TrackedCompetitor[]
   isConnected: boolean
   isLoading: boolean
   isTriggering: boolean
   error: string | null
   refresh: () => Promise<void>
   triggerAnalysis: () => Promise<void>
+  addCompetitor: (domain: string) => Promise<void>
+  removeCompetitor: (domain: string) => Promise<void>
   apiBaseUrl: string
 }
 
@@ -46,6 +54,7 @@ export function PipelineProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<StatusResponse | null>(null)
   const [competitors, setCompetitors] = useState<CompetitorCard[]>([])
   const [runs, setRuns] = useState<RunHistoryItem[]>([])
+  const [trackedCompetitors, setTrackedCompetitors] = useState<TrackedCompetitor[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isTriggering, setIsTriggering] = useState(false)
@@ -64,14 +73,16 @@ export function PipelineProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const [nextStatus, nextCompetitors, nextRuns] = await Promise.all([
+      const [nextStatus, nextCompetitors, nextRuns, nextTracked] = await Promise.all([
         fetchStatus(),
         fetchCompetitors(),
         fetchRuns(),
+        fetchTrackedCompetitors(),
       ])
       setStatus(nextStatus)
       setCompetitors(nextCompetitors)
       setRuns(nextRuns)
+      setTrackedCompetitors(nextTracked)
       setError(null)
     } catch (err) {
       const message =
@@ -111,10 +122,71 @@ export function PipelineProvider({ children }: { children: ReactNode }) {
     }
   }, [isConnected, refresh, status?.status])
 
+  const addCompetitor = useCallback(async (domain: string) => {
+    try {
+      await apiAddCompetitor(domain)
+      toast.success(`Added ${domain}`)
+      await refresh()
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to add competitor"
+      toast.error("Could not add competitor", { description: message })
+    }
+  }, [refresh])
+
+  const removeCompetitor = useCallback(async (domain: string) => {
+    try {
+      await apiRemoveCompetitor(domain)
+      toast.success(`Removed ${domain}`)
+      await refresh()
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to remove competitor"
+      toast.error("Could not remove competitor", { description: message })
+    }
+  }, [refresh])
+
   useEffect(() => {
     void refresh()
   }, [refresh])
 
+  // SSE for real-time updates during pipeline runs
+  useEffect(() => {
+    if (!isConnected) return
+
+    const cleanup = subscribeToEvents(
+      (event: SSEEvent) => {
+        if (event.type === "snapshot" || event.type === "state_update") {
+          const d = event.data
+          if (d.key === "status" || event.type === "snapshot") {
+            const newStatus = (d.status ?? d.value) as string
+            setStatus((prev) => {
+              if (!prev) return prev
+              return { ...prev, status: newStatus as StatusResponse["status"] }
+            })
+            // When status transitions to completed/failed, do a full refresh
+            if (newStatus === "completed" || newStatus === "failed") {
+              setTimeout(() => void refresh(), 500)
+            }
+          }
+          if (d.key === "progress") {
+            setStatus((prev) => prev ? { ...prev, progress: d.value as number } : prev)
+          }
+          if (d.key === "current_agent") {
+            setStatus((prev) => prev ? { ...prev, current_agent: d.value as string } : prev)
+          }
+          if (d.key === "current_step") {
+            setStatus((prev) => prev ? { ...prev, current_step: d.value as string } : prev)
+          }
+        }
+      },
+      () => {
+        // SSE disconnected — fall back to polling
+      },
+    )
+
+    return cleanup
+  }, [isConnected, refresh])
+
+  // Polling fallback (slower interval, SSE handles real-time)
   useEffect(() => {
     const ms = status && shouldPollStatus(status.status) ? RUNNING_POLL_MS : IDLE_POLL_MS
     const interval = setInterval(() => void refresh(), ms)
@@ -144,24 +216,30 @@ export function PipelineProvider({ children }: { children: ReactNode }) {
       status,
       competitors,
       runs,
+      trackedCompetitors,
       isConnected,
       isLoading,
       isTriggering,
       error,
       refresh,
       triggerAnalysis,
+      addCompetitor,
+      removeCompetitor,
       apiBaseUrl: getApiBaseUrl(),
     }),
     [
       status,
       competitors,
       runs,
+      trackedCompetitors,
       isConnected,
       isLoading,
       isTriggering,
       error,
       refresh,
       triggerAnalysis,
+      addCompetitor,
+      removeCompetitor,
     ],
   )
 
@@ -177,3 +255,4 @@ export function usePipeline() {
   }
   return context
 }
+

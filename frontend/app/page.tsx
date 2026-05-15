@@ -1,4 +1,3 @@
-import { Sidebar } from "@/components/dashboard/sidebar"
 import { Navbar } from "@/components/dashboard/navbar"
 import { AgentPipeline } from "@/components/dashboard/agent-pipeline"
 import { ActivityFeed } from "@/components/dashboard/activity-feed"
@@ -15,29 +14,30 @@ export default function Dashboard() {
       <div className="min-h-screen relative">
         <Background />
         <Navbar />
-        <Sidebar />
 
-        <main className="pl-24 pr-6 pt-28 pb-12 max-w-7xl mx-auto">
+        <main className="px-6 pt-28 pb-12 max-w-7xl mx-auto">
           <div className="space-y-8">
-            <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <section id="dashboard" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <AgentPipeline />
               </div>
-              <div>
+              <div id="reports">
                 <ActivityFeed />
               </div>
             </section>
 
-            <CompetitorCards />
+            <div id="competitors">
+              <CompetitorCards />
+            </div>
 
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div>
                 <SlackPreview />
               </div>
-              <div>
+              <div id="runs">
                 <RunHistory />
               </div>
-              <div>
+              <div id="traces">
                 <TraceCard />
               </div>
             </section>

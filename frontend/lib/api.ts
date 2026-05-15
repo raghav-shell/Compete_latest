@@ -1,8 +1,10 @@
 import type {
   CompetitorCard,
+  CompetitorDetails,
   RunHistoryItem,
   RunResponse,
   StatusResponse,
+  TrackedCompetitor,
 } from "@/lib/types"
 
 const API_BASE =
@@ -82,6 +84,78 @@ export async function checkBackendHealth(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// ---------------------------------------------------------------------------
+// Tracked competitors CRUD
+// ---------------------------------------------------------------------------
+
+/** GET /tracked-competitors */
+export async function fetchTrackedCompetitors(): Promise<TrackedCompetitor[]> {
+  return request<TrackedCompetitor[]>("/tracked-competitors")
+}
+
+/** POST /tracked-competitors */
+export async function addCompetitor(domain: string): Promise<TrackedCompetitor> {
+  return request<TrackedCompetitor>("/tracked-competitors", {
+    method: "POST",
+    body: JSON.stringify({ domain }),
+  })
+}
+
+/** DELETE /tracked-competitors/:domain */
+export async function removeCompetitor(domain: string): Promise<void> {
+  await request(`/tracked-competitors/${encodeURIComponent(domain)}`, {
+    method: "DELETE",
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Competitor deep dive
+// ---------------------------------------------------------------------------
+
+/** GET /competitors/:domain/details */
+export async function fetchCompetitorDetails(
+  domain: string,
+): Promise<CompetitorDetails> {
+  return request<CompetitorDetails>(
+    `/competitors/${encodeURIComponent(domain)}/details`,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Server-Sent Events
+// ---------------------------------------------------------------------------
+
+export interface SSEEvent {
+  type: string
+  data: Record<string, unknown>
+}
+
+/**
+ * Subscribe to SSE pipeline events. Returns a cleanup function.
+ */
+export function subscribeToEvents(
+  onMessage: (event: SSEEvent) => void,
+  onError?: () => void,
+): () => void {
+  const url = `${API_BASE}/events`
+  const eventSource = new EventSource(url)
+
+  eventSource.onmessage = (e) => {
+    try {
+      const parsed = JSON.parse(e.data) as SSEEvent
+      onMessage(parsed)
+    } catch {
+      // ignore malformed
+    }
+  }
+
+  eventSource.onerror = () => {
+    onError?.()
+  }
+
+  return () => eventSource.close()
 }
 
 // Legacy aliases

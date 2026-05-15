@@ -4,15 +4,27 @@ import { motion } from "framer-motion"
 import { LayoutDashboard, Users, FileText, Play, Activity, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+import { useState } from "react"
+
 const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", active: true },
-  { icon: Users, label: "Competitors", active: false },
-  { icon: FileText, label: "Reports", active: false },
-  { icon: Play, label: "Runs", active: false },
-  { icon: Activity, label: "Traces", active: false },
+  { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { id: "competitors", icon: Users, label: "Competitors" },
+  { id: "reports", icon: FileText, label: "Reports" },
+  { id: "runs", icon: Play, label: "Runs" },
+  { id: "traces", icon: Activity, label: "Traces" },
 ]
 
 export function Sidebar() {
+  const [activeItem, setActiveItem] = useState("dashboard")
+
+  const handleScroll = (id: string) => {
+    setActiveItem(id)
+    if (id === "dashboard") {
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    } else {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth" })
+    }
+  }
   return (
     <motion.aside
       initial={{ x: -30, opacity: 0 }}
@@ -41,9 +53,12 @@ export function Sidebar() {
           }}
         />
 
-        {navItems.map((item, index) => (
+        {navItems.map((item, index) => {
+          const isActive = activeItem === item.id;
+          return (
           <motion.button
-            key={item.label}
+            key={item.id}
+            onClick={() => handleScroll(item.id)}
             initial={{ opacity: 0, x: -15 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ 
@@ -55,15 +70,15 @@ export function Sidebar() {
             whileTap={{ scale: 0.95 }}
             className={cn(
               "relative p-3.5 rounded-xl transition-all duration-300 group",
-              item.active
+              isActive
                 ? "text-white"
                 : "text-muted-foreground hover:text-foreground"
             )}
             style={{
-              background: item.active 
+              background: isActive 
                 ? "linear-gradient(135deg, oklch(0.55 0.2 260), oklch(0.6 0.18 230))"
                 : "transparent",
-              boxShadow: item.active 
+              boxShadow: isActive 
                 ? "0 4px 16px oklch(0.5 0.2 260 / 0.35)"
                 : "none",
             }}
@@ -71,7 +86,7 @@ export function Sidebar() {
             <item.icon className="w-5 h-5 relative z-10" />
             
             {/* Inner light for active */}
-            {item.active && (
+            {isActive && (
               <div 
                 className="absolute inset-0 rounded-xl"
                 style={{
@@ -81,7 +96,7 @@ export function Sidebar() {
             )}
             
             {/* Hover background */}
-            {!item.active && (
+            {!isActive && (
               <motion.div
                 className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 style={{
@@ -112,7 +127,7 @@ export function Sidebar() {
               />
             </motion.div>
           </motion.button>
-        ))}
+        )})}
 
         {/* Separator */}
         <div 

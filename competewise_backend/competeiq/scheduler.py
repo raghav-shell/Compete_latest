@@ -33,8 +33,12 @@ async def scheduled_pipeline_run() -> None:
 
     Updates global state before/after execution; logs errors without raising.
     """
+    from competeiq.state import get_tracked_domains, seed_default_competitors
+
     run_id = str(uuid.uuid4())
-    competitors: list[str] = list(_schedule_config["competitors"])
+    seed_default_competitors()
+    tracked = get_tracked_domains()
+    competitors: list[str] = tracked if tracked else list(_schedule_config["competitors"])
 
     update_state("status", "running")
     update_state("run_id", run_id)
