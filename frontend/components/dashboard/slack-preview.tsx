@@ -8,11 +8,25 @@ import { formatRelativeTime } from "@/lib/pipeline-utils"
 export function SlackPreview() {
   const { runs, status } = usePipeline()
   const latest = runs[0]
-  const summary =
+  const rawSummary =
     latest?.slack_message ||
     (status?.status === "running"
       ? "Pipeline running — Slack digest will post when the Notifier agent completes."
       : "Run analysis to post a competitive intelligence digest to Slack.")
+
+  const summary = rawSummary.replace(/https?:\/\/[^\s]+/g, (urlMatch) => {
+    const cleanUrl = urlMatch.replace(/[:.,;]+$/, "")
+    const trailing = urlMatch.slice(cleanUrl.length)
+    try {
+      const hostname = new URL(cleanUrl).hostname.replace(/^www\./, "")
+      // Optionally Capitalize the first letter for a cleaner look
+      const name = hostname.split('.')[0]
+      const capitalized = name.charAt(0).toUpperCase() + name.slice(1)
+      return capitalized + trailing
+    } catch {
+      return urlMatch
+    }
+  })
 
   return (
     <motion.section
@@ -58,7 +72,7 @@ export function SlackPreview() {
         }}
       >
         <p className="text-sm font-semibold mb-2">Weekly Competitive Summary</p>
-        <p className="text-sm leading-relaxed whitespace-pre-line text-muted-foreground break-words break-all">
+        <p className="text-sm leading-relaxed whitespace-pre-line text-muted-foreground break-words">
           {summary}
         </p>
         {latest && (
