@@ -7,6 +7,7 @@ import logging
 from competeiq.config import get_settings
 from competeiq.pipeline.state import GraphState
 from competeiq.services.slack_service import SlackService
+from competeiq.utils.llm import generate_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,8 @@ ERRORS: {json.dumps(state['errors'])}
 Return ONLY valid Slack Block Kit JSON. The root object must have a "blocks" array.
 """
         response = await asyncio.to_thread(
-            model.generate_content,
+            generate_with_retry,
+            model,
             prompt,
             generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
         )

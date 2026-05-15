@@ -42,6 +42,7 @@ async def scout_agent(state: GraphState) -> GraphState:
     genai.configure(api_key=settings.gemini_api_key)
     model = genai.GenerativeModel("gemini-flash-latest")
 
+    state["needs_reflection"] = False
     logger.info("Scout agent: Starting crawl for %d competitors", len(state["competitors"]))
 
     async def _crawl_one(competitor: str) -> tuple[str, dict, str | None]:
@@ -233,15 +234,7 @@ graph.add_edge("signal", "analyst")
 graph.add_edge("analyst", "evaluator")
 
 def route_evaluation(state: GraphState) -> str:
-    # If reflection_count changed to > 0, it means we need to loop back
-    # Wait, the evaluator increments reflection_count when it decides to loop.
-    # So if reflection_count > 0 AND it was just incremented...
-    # Actually, a simpler way is to check the last error log or rely on the evaluator
-    # to set a explicit flag. But we can just use reflection_count logic:
-    # If reflection_count == 1 and we just hit evaluator, loop back.
-    # Actually, let's just add a small flag `needs_reflection: bool` to GraphState? No,
-    # let's just check if "Evaluator: Insights lacked depth. Initiating reflection loop." is the very last error.
-    if state["errors"] and state["errors"][-1].startswith("Evaluator: Insights lacked depth"):
+    if state.get("needs_reflection"):
         return "scout"
     return "report"
 

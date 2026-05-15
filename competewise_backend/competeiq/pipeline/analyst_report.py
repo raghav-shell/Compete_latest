@@ -157,10 +157,11 @@ async def evaluator_agent(state: GraphState) -> GraphState:
     if needs_reflection and state.get("reflection_count", 0) < 1:
         logger.warning("Evaluator: Insights are weak. Reflecting and looping back to Scout.")
         state["reflection_count"] = state.get("reflection_count", 0) + 1
+        state["needs_reflection"] = True
         state["errors"].append("Evaluator: Insights lacked depth. Initiating reflection loop.")
-        # Optional: You could inject a hint into GraphState here for Scout to look harder
     else:
         logger.info("Evaluator: Insights approved or max reflections reached.")
+        state["needs_reflection"] = False
 
     return state
 

@@ -16,6 +16,7 @@ class GraphState(TypedDict):
     slack_sent: bool
     errors: list[str]
     reflection_count: int
+    needs_reflection: bool
 
 
 def create_initial_state(competitors: list[str]) -> GraphState:
@@ -29,4 +30,5 @@ def create_initial_state(competitors: list[str]) -> GraphState:
         slack_sent=False,
         errors=[],
         reflection_count=0,
+        needs_reflection=False,
     )
