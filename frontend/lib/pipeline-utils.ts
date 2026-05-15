@@ -1,14 +1,15 @@
 import type { CurrentAgent, PipelineStatus } from "@/lib/types"
 
-export const AGENT_IDS = ["scout", "signal", "analyst", "report", "notifier"] as const
+export const AGENT_IDS = ["scout", "signal", "analyst", "evaluator", "report", "notifier"] as const
 
 const AGENT_INDEX: Record<string, number> = {
   scout: 0,
   signal: 1,
   analyst: 2,
-  report: 3,
-  notifier: 4,
-  done: 5,
+  evaluator: 3,
+  report: 4,
+  notifier: 5,
+  done: 6,
 }
 
 export function agentToIndex(agent: string | undefined): number {

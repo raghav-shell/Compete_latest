@@ -1,7 +1,7 @@
 "use client"
 
 import { motion, AnimatePresence } from "framer-motion"
-import { Search, Zap, Brain, FileText, MessageSquare, Radio } from "lucide-react"
+import { Search, Zap, Brain, FileText, MessageSquare, Radio, Scale } from "lucide-react"
 import { useEffect, useMemo, useRef } from "react"
 import { usePipeline } from "@/providers/pipeline-provider"
 import { AGENT_IDS } from "@/lib/pipeline-utils"
@@ -10,6 +10,7 @@ const agentMeta: Record<string, { icon: typeof Search; color: string }> = {
   scout: { icon: Search, color: "oklch(0.55 0.2 250)" },
   signal: { icon: Zap, color: "oklch(0.6 0.18 200)" },
   analyst: { icon: Brain, color: "oklch(0.55 0.15 180)" },
+  evaluator: { icon: Scale, color: "oklch(0.5 0.18 100)" },
   report: { icon: FileText, color: "oklch(0.5 0.15 160)" },
   notifier: { icon: MessageSquare, color: "oklch(0.55 0.18 280)" },
 }

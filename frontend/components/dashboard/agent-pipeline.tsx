@@ -1,7 +1,7 @@
 "use client"
 
 import { motion, AnimatePresence } from "framer-motion"
-import { Search, Zap, Brain, FileText, Bell } from "lucide-react"
+import { Search, Zap, Brain, FileText, Bell, Scale } from "lucide-react"
 import { useEffect, useState } from "react"
 import { usePipeline } from "@/providers/pipeline-provider"
 import { getActiveAgentIndex } from "@/lib/pipeline-utils"
@@ -10,7 +10,8 @@ const agents = [
   { id: "scout", name: "Scout", icon: Search, status: "Analyzing pricing pages...", color: "from-blue-500 to-cyan-400" },
   { id: "signal", name: "Signal", icon: Zap, status: "Detecting changes...", color: "from-cyan-400 to-teal-400" },
   { id: "analyst", name: "Analyst", icon: Brain, status: "Processing insights...", color: "from-teal-400 to-emerald-400" },
-  { id: "report", name: "Report", icon: FileText, status: "Generating report...", color: "from-emerald-400 to-blue-400" },
+  { id: "evaluator", name: "Evaluator", icon: Scale, status: "Assessing insights...", color: "from-emerald-400 to-lime-400" },
+  { id: "report", name: "Report", icon: FileText, status: "Generating report...", color: "from-lime-400 to-blue-400" },
   { id: "notifier", name: "Notifier", icon: Bell, status: "Sending updates...", color: "from-blue-400 to-indigo-500" },
 ]
 

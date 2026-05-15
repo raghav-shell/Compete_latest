@@ -15,6 +15,7 @@ class GraphState(TypedDict):
     report_urls: dict[str, str]
     slack_sent: bool
     errors: list[str]
+    reflection_count: int
 
 
 def create_initial_state(competitors: list[str]) -> GraphState:
@@ -27,4 +28,5 @@ def create_initial_state(competitors: list[str]) -> GraphState:
         report_urls={},
         slack_sent=False,
         errors=[],
+        reflection_count=0,
     )

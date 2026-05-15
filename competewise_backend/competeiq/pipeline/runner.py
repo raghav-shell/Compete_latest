@@ -16,6 +16,7 @@ PIPELINE_STEPS: list[tuple[str, str, int]] = [
     ("scout", "Scout: Crawling competitor sites...", 15),
     ("signal", "Signal: Detecting changes...", 35),
     ("analyst", "Analyst: Strategic reasoning...", 55),
+    ("evaluator", "Evaluator: Assessing insights...", 65),
     ("report", "Report: Creating Notion briefs...", 75),
     ("notifier", "Notifier: Posting to Slack...", 90),
 ]

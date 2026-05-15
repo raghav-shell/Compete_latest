@@ -53,14 +53,15 @@ async def analyst_agent(state: GraphState) -> GraphState:
     genai.configure(api_key=settings.gemini_api_key)
     model = genai.GenerativeModel("gemini-flash-latest")
 
-    for competitor in state["competitors"]:
+    # Fan out!
+    async def _analyze_one(c: str) -> tuple[str, dict, str | None]:
         try:
-            raw_data = state["raw_data"].get(competitor, {})
-            signals = state["signals"].get(competitor, [])
+            raw_data = state["raw_data"].get(c, {})
+            signals = state["signals"].get(c, [])
 
             prompt = f"""You are a senior competitive analyst. Analyze the following competitor intelligence and provide strategic insights.
 
-Competitor: {competitor}
+Competitor: {c}
 
 RECENT SIGNALS (Changes detected):
 {json.dumps(signals, indent=2)}
@@ -77,7 +78,7 @@ Return ONLY a valid JSON object (no markdown, no backticks) with exactly these k
 - "recommended_actions" (list of strings, what we should do)
 - "watch_next" (string, what to monitor in the future)
 """
-            logger.info("Analyst: Thinking about %s...", competitor)
+            logger.info("Analyst: Thinking about %s...", c)
 
             def call_gemini() -> str:
                 response = model.generate_content(
@@ -90,32 +91,75 @@ Return ONLY a valid JSON object (no markdown, no backticks) with exactly these k
             
             try:
                 analysis_json = json.loads(analysis_text)
-                state["analysis"][competitor] = analysis_json
+                return c, analysis_json, None
             except Exception as e:
-                logger.error("Analyst: Failed to parse JSON for %s: %s", competitor, e)
-                state["analysis"][competitor] = {
+                logger.error("Analyst: Failed to parse JSON for %s: %s", c, e)
+                return c, {
                     "signals_analyzed": 0,
                     "top_insight": "Failed to parse analysis.",
                     "strategic_implications": [],
                     "recommended_actions": [],
                     "watch_next": "N/A"
-                }
-
-            logger.info("Analyst: Completed analysis for %s", competitor)
+                }, None
 
         except Exception as exc:
-            error_msg = f"Analyst failed for {competitor}: {exc}"
+            error_msg = f"Analyst failed for {c}: {exc}"
             logger.error(error_msg)
-            state["errors"].append(error_msg)
-            state["analysis"][competitor] = {
+            return c, {
                 "signals_analyzed": 0,
                 "top_insight": f"Analysis failed: {exc}",
                 "strategic_implications": [],
                 "recommended_actions": [],
                 "watch_next": ""
-            }
+            }, error_msg
+
+    results = await asyncio.gather(*[_analyze_one(c) for c in state["competitors"]])
+    for c, analysis, error_msg in results:
+        state["analysis"][c] = analysis
+        if error_msg:
+            state["errors"].append(error_msg)
 
     logger.info("Analyst agent: Reasoning complete")
+    return state
+
+
+# ---------------------------------------------------------------------------
+# SECTION 3: Evaluator Agent Function
+# ---------------------------------------------------------------------------
+
+async def evaluator_agent(state: GraphState) -> GraphState:
+    """
+    Evaluate the depth of the analyst's insights. If insights are poor and
+    we haven't reflected yet, loop back to scout.
+    """
+    settings = get_settings()
+
+    if not settings.gemini_api_key:
+        return state
+
+    genai.configure(api_key=settings.gemini_api_key)
+    model = genai.GenerativeModel("gemini-flash-latest")
+
+    needs_reflection = False
+    
+    # Simple evaluation: if any insight is very short or generic
+    for competitor in state["competitors"]:
+        analysis = state["analysis"].get(competitor, {})
+        insight = analysis.get("top_insight", "")
+        
+        # Check if the insight is meaningful
+        if len(insight) < 30 or "nothing significant" in insight.lower() or "failed to parse" in insight.lower():
+            needs_reflection = True
+            break
+            
+    if needs_reflection and state.get("reflection_count", 0) < 1:
+        logger.warning("Evaluator: Insights are weak. Reflecting and looping back to Scout.")
+        state["reflection_count"] = state.get("reflection_count", 0) + 1
+        state["errors"].append("Evaluator: Insights lacked depth. Initiating reflection loop.")
+        # Optional: You could inject a hint into GraphState here for Scout to look harder
+    else:
+        logger.info("Evaluator: Insights approved or max reflections reached.")
+
     return state
 
 
@@ -233,13 +277,15 @@ async def report_agent(state: GraphState) -> GraphState:
 
     logger.info("Report agent: Creating Notion pages for %d competitors", len(state["competitors"]))
 
-    for competitor in state["competitors"]:
+    logger.info("Report agent: Creating Notion pages for %d competitors", len(state["competitors"]))
+
+    async def _report_one(c: str) -> tuple[str, str | None, str | None]:
         try:
-            signals = state["signals"].get(competitor, [])
-            analysis = state["analysis"].get(competitor, {})
+            signals = state["signals"].get(c, [])
+            analysis = state["analysis"].get(c, {})
 
             prompt = f"""You are a Report agent. Write a professional, executive-style competitive intelligence brief in Markdown format.
-Competitor: {competitor}
+Competitor: {c}
 
 ANALYSIS:
 {json.dumps(analysis, indent=2)}
@@ -262,16 +308,23 @@ Keep it concise and strategic."""
                 _create_notion_page,
                 notion_client,
                 database_id,
-                competitor,
+                c,
                 blocks,
             )
 
-            state["report_urls"][competitor] = notion_url
-            logger.info("Report: Created Notion page for %s at %s", competitor, notion_url)
+            logger.info("Report: Created Notion page for %s at %s", c, notion_url)
+            return c, notion_url, None
 
         except Exception as exc:
-            error_msg = f"Report failed for {competitor}: {exc}"
+            error_msg = f"Report failed for {c}: {exc}"
             logger.error(error_msg)
+            return c, None, error_msg
+
+    results = await asyncio.gather(*[_report_one(c) for c in state["competitors"]])
+    for c, url, error_msg in results:
+        if url:
+            state["report_urls"][c] = url
+        if error_msg:
             state["errors"].append(error_msg)
 
     logger.info("Report agent: Notion pages created")
@@ -284,5 +337,6 @@ Keep it concise and strategic."""
 
 __all__ = [
     "analyst_agent",
+    "evaluator_agent",
     "report_agent",
 ]

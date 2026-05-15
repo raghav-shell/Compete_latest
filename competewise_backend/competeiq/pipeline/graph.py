@@ -43,7 +43,7 @@ async def scout_agent(state: GraphState) -> GraphState:
 
     logger.info("Scout agent: Starting crawl for %d competitors", len(state["competitors"]))
 
-    for competitor in state["competitors"]:
+    async def _crawl_one(competitor: str) -> tuple[str, dict, str | None]:
         try:
             queries = [
                 f"{competitor} website features",
@@ -52,14 +52,21 @@ async def scout_agent(state: GraphState) -> GraphState:
                 f"{competitor} jobs hiring",
             ]
             combined_content = ""
-            for query in queries:
-                logger.info("Scout: Searching '%s'", query)
+            # Tavily searches concurrently
+            async def _search(q: str) -> str:
                 try:
-                    result = await asyncio.to_thread(client.search, query, max_results=3)
-                    for item in result.get("results", []):
-                        combined_content += f"\\n{item.get('title', '')}\\n{item.get('content', '')}\\n"
+                    logger.info("Scout: Searching '%s'", q)
+                    res = await asyncio.to_thread(client.search, q, max_results=3)
+                    content = ""
+                    for item in res.get("results", []):
+                        content += f"\\n{item.get('title', '')}\\n{item.get('content', '')}\\n"
+                    return content
                 except Exception as exc:
-                    logger.warning("Scout: Search failed for '%s': %s", query, exc)
+                    logger.warning("Scout: Search failed for '%s': %s", q, exc)
+                    return ""
+
+            search_results = await asyncio.gather(*[_search(q) for q in queries])
+            combined_content = "".join(search_results)
 
             prompt = f"""You are a Scout agent. Your job is to gather raw intelligence about a competitor.
 Given competitor: {competitor}
@@ -80,20 +87,22 @@ If nothing is found for a category, return an empty list. Be factual. Do not inv
             
             try:
                 parsed = json.loads(response.text)
-                state["raw_data"][competitor] = parsed
+                return competitor, parsed, None
             except Exception as parse_exc:
                 logger.error("Scout: Failed to parse JSON for %s: %s", competitor, parse_exc)
-                state["raw_data"][competitor] = {
-                    "features": [], "pricing": [], "jobs": [], "press": [], "sentiment": []
-                }
+                return competitor, {"features": [], "pricing": [], "jobs": [], "press": [], "sentiment": []}, None
                 
         except Exception as exc:
             error_msg = f"Scout failed for {competitor}: {exc}"
             logger.error(error_msg)
+            return competitor, {"features": [], "pricing": [], "jobs": [], "press": [], "sentiment": []}, error_msg
+
+    # Fan out!
+    results = await asyncio.gather(*[_crawl_one(c) for c in state["competitors"]])
+    for competitor, raw_data, error_msg in results:
+        state["raw_data"][competitor] = raw_data
+        if error_msg:
             state["errors"].append(error_msg)
-            state["raw_data"][competitor] = {
-                "features": [], "pricing": [], "jobs": [], "press": [], "sentiment": []
-            }
 
     logger.info("Scout agent: Crawl complete")
     return state
@@ -171,14 +180,19 @@ async def signal_agent(state: GraphState) -> GraphState:
         len(state["competitors"]),
     )
 
-    for competitor in state["competitors"]:
-        current_content = state["raw_data"].get(competitor, {})
+    # Fan out!
+    async def _diff_one(c: str) -> tuple[str, list[dict], list[str]]:
+        current_content = state["raw_data"].get(c, {})
         signals, errors = await asyncio.to_thread(
             _process_signal_for_competitor,
-            competitor,
+            c,
             current_content,
         )
-        state["signals"][competitor] = signals
+        return c, signals, errors
+
+    results = await asyncio.gather(*[_diff_one(c) for c in state["competitors"]])
+    for c, signals, errors in results:
+        state["signals"][c] = signals
         state["errors"].extend(errors)
 
     logger.info("Signal agent: Diff complete")
@@ -189,7 +203,7 @@ async def signal_agent(state: GraphState) -> GraphState:
 # SECTION 6: Compiled LangGraph
 # ---------------------------------------------------------------------------
 
-from competeiq.pipeline.analyst_report import analyst_agent, report_agent
+from competeiq.pipeline.analyst_report import analyst_agent, evaluator_agent, report_agent
 from competeiq.pipeline.notifier import notifier_agent
 
 graph = StateGraph(GraphState)
@@ -197,13 +211,37 @@ graph = StateGraph(GraphState)
 graph.add_node("scout", scout_agent)
 graph.add_node("signal", signal_agent)
 graph.add_node("analyst", analyst_agent)
+graph.add_node("evaluator", evaluator_agent)
 graph.add_node("report", report_agent)
 graph.add_node("notifier", notifier_agent)
 
 graph.add_edge(START, "scout")
 graph.add_edge("scout", "signal")
 graph.add_edge("signal", "analyst")
-graph.add_edge("analyst", "report")
+graph.add_edge("analyst", "evaluator")
+
+def route_evaluation(state: GraphState) -> str:
+    # If reflection_count changed to > 0, it means we need to loop back
+    # Wait, the evaluator increments reflection_count when it decides to loop.
+    # So if reflection_count > 0 AND it was just incremented...
+    # Actually, a simpler way is to check the last error log or rely on the evaluator
+    # to set a explicit flag. But we can just use reflection_count logic:
+    # If reflection_count == 1 and we just hit evaluator, loop back.
+    # Actually, let's just add a small flag `needs_reflection: bool` to GraphState? No,
+    # let's just check if "Evaluator: Insights lacked depth. Initiating reflection loop." is the very last error.
+    if state["errors"] and state["errors"][-1].startswith("Evaluator: Insights lacked depth"):
+        return "scout"
+    return "report"
+
+graph.add_conditional_edges(
+    "evaluator",
+    route_evaluation,
+    {
+        "scout": "scout",
+        "report": "report",
+    }
+)
+
 graph.add_edge("report", "notifier")
 graph.add_edge("notifier", END)
 
