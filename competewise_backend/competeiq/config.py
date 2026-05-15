@@ -23,20 +23,30 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
+    groq_api_key: str = ""
     tavily_api_key: str = ""
     slack_webhook_url: str = ""
     notion_api_key: str = ""
     notion_database_id: str = ""
     debug: bool = False
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    ngrok_authtoken: str = ""
+    competitors: str = "linear.app,notion.so,vercel.com"
+    cors_origins: str = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173"
+    )
 
     @field_validator(
         "anthropic_api_key",
         "gemini_api_key",
+        "groq_api_key",
         "tavily_api_key",
         "slack_webhook_url",
         "notion_api_key",
         "notion_database_id",
+        "ngrok_authtoken",
         "cors_origins",
         mode="before",
     )
@@ -60,6 +70,15 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         """True when running in debug/development mode."""
         return self.debug
+
+    @property
+    def default_competitors(self) -> list[str]:
+        """Default competitor list from COMPETITORS env (comma-separated)."""
+        return [
+            item.strip()
+            for item in self.competitors.split(",")
+            if item.strip()
+        ]
 
 
 _settings: Settings | None = None

@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
-from difflib import unified_diff
+import json
 from pathlib import Path
 from langgraph.graph import END, START, StateGraph
 from tavily import TavilyClient
+import google.generativeai as genai
 
 from competeiq.config import get_settings
 from competeiq.pipeline.state import GraphState, create_initial_state
@@ -67,32 +68,21 @@ def init_snapshots_db(db_path: str = DEFAULT_SNAPSHOTS_DB) -> None:
 
 async def scout_agent(state: GraphState) -> GraphState:
     """
-    Crawl competitor websites using the Tavily API.
-
-    For each competitor, run search queries (website, changelog, pricing, jobs),
-    aggregate result text into ``state.raw_data``, and record failures in
-    ``state.errors``.
-
-    Args:
-        state: Current graph state.
-
-    Returns:
-        Updated state with ``raw_data`` populated.
+    Crawl competitor websites using the Tavily API and extract structured JSON with Gemini.
     """
     settings = get_settings()
 
-    if not settings.tavily_api_key:
-        msg = "Scout agent: TAVILY_API_KEY is not configured"
+    if not settings.tavily_api_key or not settings.gemini_api_key:
+        msg = "Scout agent: TAVILY_API_KEY or GEMINI_API_KEY not configured"
         logger.error(msg)
         state["errors"].append(msg)
         return state
 
     client = TavilyClient(api_key=settings.tavily_api_key)
+    genai.configure(api_key=settings.gemini_api_key)
+    model = genai.GenerativeModel("gemini-flash-latest")
 
-    logger.info(
-        "Scout agent: Starting crawl for %d competitors",
-        len(state["competitors"]),
-    )
+    logger.info("Scout agent: Starting crawl for %d competitors", len(state["competitors"]))
 
     for competitor in state["competitors"]:
         try:
@@ -102,44 +92,49 @@ async def scout_agent(state: GraphState) -> GraphState:
                 f"{competitor} pricing plans",
                 f"{competitor} jobs hiring",
             ]
-
             combined_content = ""
-
             for query in queries:
                 logger.info("Scout: Searching '%s'", query)
                 try:
-                    result = await asyncio.to_thread(
-                        client.search,
-                        query,
-                        max_results=3,
-                    )
-
+                    result = await asyncio.to_thread(client.search, query, max_results=3)
                     for item in result.get("results", []):
-                        title = item.get("title", "")
-                        content = item.get("content", "")
-                        combined_content += f"\n{title}\n{content}\n"
-
+                        combined_content += f"\\n{item.get('title', '')}\\n{item.get('content', '')}\\n"
                 except Exception as exc:
-                    logger.warning(
-                        "Scout: Search failed for '%s': %s",
-                        query,
-                        exc,
-                    )
-                    state["errors"].append(
-                        f"Scout search failed for {competitor} - {query}: {exc}"
-                    )
+                    logger.warning("Scout: Search failed for '%s': %s", query, exc)
 
-            state["raw_data"][competitor] = combined_content[:10000]
-            logger.info(
-                "Scout: Collected %d chars for %s",
-                len(combined_content),
-                competitor,
+            prompt = f"""You are a Scout agent. Your job is to gather raw intelligence about a competitor.
+Given competitor: {competitor}
+RAW SEARCH RESULTS:
+{combined_content[:15000]}
+
+Extract findings from the search results.
+Return ONLY a valid JSON object (no markdown, no backticks) with exactly these keys: "features", "pricing", "jobs", "press", "sentiment".
+Each key must map to an array of objects with exactly these string keys: "text", "source_url", "date_found".
+If nothing is found for a category, return an empty list. Be factual. Do not invent findings."""
+
+            logger.info("Scout: Generating structured JSON for %s", competitor)
+            response = await asyncio.to_thread(
+                model.generate_content,
+                prompt,
+                generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
             )
-
+            
+            try:
+                parsed = json.loads(response.text)
+                state["raw_data"][competitor] = parsed
+            except Exception as parse_exc:
+                logger.error("Scout: Failed to parse JSON for %s: %s", competitor, parse_exc)
+                state["raw_data"][competitor] = {
+                    "features": [], "pricing": [], "jobs": [], "press": [], "sentiment": []
+                }
+                
         except Exception as exc:
             error_msg = f"Scout failed for {competitor}: {exc}"
             logger.error(error_msg)
             state["errors"].append(error_msg)
+            state["raw_data"][competitor] = {
+                "features": [], "pricing": [], "jobs": [], "press": [], "sentiment": []
+            }
 
     logger.info("Scout agent: Crawl complete")
     return state
@@ -153,73 +148,63 @@ async def scout_agent(state: GraphState) -> GraphState:
 def _process_signal_for_competitor(
     db_path: str,
     competitor: str,
-    current_content: str,
-) -> tuple[list[str], list[str]]:
+    current_content: dict,
+) -> tuple[list[dict], list[str]]:
     """
-    Diff current content against the latest snapshot and persist a new row.
-
-    Returns:
-        Tuple of (signal lines, errors).
+    Diff current JSON against the latest snapshot using Gemini.
     """
     errors: list[str] = []
-    signals: list[str] = []
+    signals: list[dict] = []
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     try:
         cursor.execute(
-            """
-            SELECT snapshot FROM competitor_snapshots
-            WHERE competitor = ?
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
+            "SELECT snapshot FROM competitor_snapshots WHERE competitor = ? ORDER BY created_at DESC LIMIT 1",
             (competitor,),
         )
         row = cursor.fetchone()
+        
+        current_content_str = json.dumps(current_content)
 
         if row is None:
             logger.info("Signal: %s - first run, establishing baseline", competitor)
-            signals = ["Establishing baseline (first scan)"]
+            signals = [{"change_type": "baseline", "description": "Establishing baseline (first scan)", "significance": "low", "reasoning": "First run"}]
         else:
-            previous_content = row[0]
-            diff_lines = list(
-                unified_diff(
-                    previous_content.splitlines(keepends=True),
-                    current_content.splitlines(keepends=True),
-                    lineterm="",
-                )
+            previous_content_str = row[0]
+            
+            settings = get_settings()
+            genai.configure(api_key=settings.gemini_api_key)
+            model = genai.GenerativeModel("gemini-flash-latest")
+            
+            prompt = f"""You are a Signal agent. Compare two versions of a competitor's web presence.
+PREVIOUS: {previous_content_str[:15000]}
+CURRENT: {current_content_str[:15000]}
+
+Identify what is genuinely new or changed. Ignore cosmetic changes.
+Focus on: new features, pricing changes, messaging shifts, new integrations, deprecations.
+
+Return ONLY a JSON array of objects (no markdown, no backticks).
+Each object must have these exact keys: "change_type", "description", "significance" (high, medium, or low), "reasoning".
+If nothing meaningful changed, return an empty array []."""
+            
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
             )
-
-            if diff_lines:
-                changes: list[str] = []
-                for line in diff_lines:
-                    if line.startswith("+") and not line.startswith("+++"):
-                        change = line[1:].strip()
-                        if change and len(change) > 5:
-                            changes.append(f"New: {change[:80]}")
-                    elif line.startswith("-") and not line.startswith("---"):
-                        change = line[1:].strip()
-                        if change and len(change) > 5:
-                            changes.append(f"Removed: {change[:80]}")
-
-                signals = changes if changes else ["Changes detected but unclear"]
-                logger.info(
-                    "Signal: %s - found %d changes",
-                    competitor,
-                    len(changes),
-                )
-            else:
-                signals = ["No changes detected"]
-                logger.info("Signal: %s - no changes", competitor)
+            
+            try:
+                signals = json.loads(response.text)
+                if not isinstance(signals, list):
+                    signals = []
+            except Exception as e:
+                logger.error("Signal: JSON parse error: %s", e)
+                signals = []
 
         cursor.execute(
-            """
-            INSERT INTO competitor_snapshots (competitor, snapshot)
-            VALUES (?, ?)
-            """,
-            (competitor, current_content),
+            "INSERT INTO competitor_snapshots (competitor, snapshot) VALUES (?, ?)",
+            (competitor, current_content_str),
         )
         conn.commit()
         logger.info("Signal: Saved snapshot for %s", competitor)
@@ -236,15 +221,6 @@ def _process_signal_for_competitor(
 async def signal_agent(state: GraphState) -> GraphState:
     """
     Diff current competitor data against the latest SQLite snapshot.
-
-    For each competitor, load the previous snapshot, compare with ``raw_data``,
-    store human-readable diffs in ``state.signals``, and save the new snapshot.
-
-    Args:
-        state: Graph state with ``raw_data`` populated.
-
-    Returns:
-        Updated state with ``signals`` populated.
     """
     db_path = DEFAULT_SNAPSHOTS_DB
 
@@ -254,7 +230,7 @@ async def signal_agent(state: GraphState) -> GraphState:
     )
 
     for competitor in state["competitors"]:
-        current_content = state["raw_data"].get(competitor, "")
+        current_content = state["raw_data"].get(competitor, {})
         signals, errors = await asyncio.to_thread(
             _process_signal_for_competitor,
             db_path,

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import TypedDict, Any
 
 
 class GraphState(TypedDict):
     """Shared state passed between all agents."""
 
     competitors: list[str]
-    raw_data: dict[str, str]
-    signals: dict[str, list[str]]
-    analysis: dict[str, str]
+    raw_data: dict[str, Any]
+    signals: dict[str, list[dict[str, Any]]]
+    analysis: dict[str, dict[str, Any]]
     report_urls: dict[str, str]
     slack_sent: bool
     errors: list[str]

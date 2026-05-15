@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from competeiq.pipeline.runner import PipelineRunner
-from competeiq.state import update_state
+from competeiq.state import start_run, update_state
 from competeiq.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -50,9 +50,10 @@ async def run_pipeline(run_id: str, competitors: list[str]) -> None:
         runner = PipelineRunner()
         result = await runner.run(run_id=run_id, competitors=competitors)
 
-        update_state("status", "idle")
+        update_state("status", "completed")
         update_state("progress", 100)
         update_state("current_step", "Complete")
+        update_state("current_agent", "done")
         update_state("last_run_result", result)
         update_state("error_message", None)
 
@@ -60,8 +61,9 @@ async def run_pipeline(run_id: str, competitors: list[str]) -> None:
 
     except Exception as exc:
         logger.error("Pipeline failed: %s", exc, extra={"run_id": run_id})
-        update_state("status", "error")
+        update_state("status", "failed")
         update_state("current_step", "Failed")
+        update_state("current_agent", "done")
         update_state("error_message", str(exc))
 
 
@@ -81,13 +83,7 @@ async def trigger_pipeline(
     returns immediately with a ``run_id``. The pipeline runs in the background.
     """
     run_id = str(uuid.uuid4())
-
-    update_state("status", "running")
-    update_state("run_id", run_id)
-    update_state("competitors", request.competitors)
-    update_state("current_step", "Initializing...")
-    update_state("progress", 0)
-    update_state("error_message", None)
+    start_run(run_id, request.competitors)
 
     logger.info(
         "Webhook triggered",

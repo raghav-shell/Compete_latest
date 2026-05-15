@@ -3,35 +3,12 @@
 import { motion } from "framer-motion"
 import { ArrowRight, TrendingUp, AlertTriangle, CheckCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { usePipeline } from "@/providers/pipeline-provider"
 
-const competitors = [
-  {
-    id: 1,
-    name: "Linear",
-    logo: "L",
-    insight: "Enterprise pricing increased by 15%, suggesting shift to larger accounts",
-    confidence: 94,
-    severity: "high",
-    gradient: "from-indigo-500 via-violet-500 to-purple-500",
-  },
-  {
-    id: 2,
-    name: "Notion",
-    logo: "N",
-    insight: "New AI features launched targeting collaboration workflows",
-    confidence: 87,
-    severity: "medium",
-    gradient: "from-slate-600 via-slate-700 to-slate-800",
-  },
-  {
-    id: 3,
-    name: "Vercel",
-    logo: "V",
-    insight: "Expanded edge network coverage, 12 new regions announced",
-    confidence: 91,
-    severity: "low",
-    gradient: "from-neutral-700 via-neutral-800 to-neutral-900",
-  },
+const gradients = [
+  "from-indigo-500 via-violet-500 to-purple-500",
+  "from-slate-600 via-slate-700 to-slate-800",
+  "from-neutral-700 via-neutral-800 to-neutral-900",
 ]
 
 const severityConfig = {
@@ -56,6 +33,20 @@ const severityConfig = {
 }
 
 export function CompetitorCards() {
+  const { competitors: cards, isLoading } = usePipeline()
+
+  const competitors = cards.map((c, index) => ({
+    id: c.name,
+    name: c.name,
+    url: c.url,
+    logo: c.name.charAt(0),
+    insight: c.top_insight,
+    confidence: Math.min(70 + c.signals_count * 8 + (c.notion_url ? 10 : 0), 99),
+    severity: c.severity,
+    notionUrl: c.notion_url,
+    gradient: gradients[index % gradients.length],
+  }))
+
   return (
     <motion.section
       initial={{ opacity: 0, y: 30 }}
@@ -216,11 +207,15 @@ export function CompetitorCards() {
                   whileHover={{ x: 0 }}
                   className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 >
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="text-xs font-semibold h-8 px-3"
                     style={{ color: "oklch(0.5 0.1 260)" }}
+                    disabled={!competitor.notionUrl}
+                    onClick={() => {
+                      if (competitor.notionUrl) window.open(competitor.notionUrl, "_blank")
+                    }}
                   >
                     View Report
                   </Button>

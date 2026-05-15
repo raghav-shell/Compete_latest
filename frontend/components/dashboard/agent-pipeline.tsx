@@ -2,7 +2,9 @@
 
 import { motion, AnimatePresence } from "framer-motion"
 import { Search, Zap, Brain, FileText, Bell } from "lucide-react"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState } from "react"
+import { usePipeline } from "@/providers/pipeline-provider"
+import { getActiveAgentIndex } from "@/lib/pipeline-utils"
 
 const agents = [
   { id: "scout", name: "Scout", icon: Search, status: "Analyzing pricing pages...", color: "from-blue-500 to-cyan-400" },
@@ -69,23 +71,41 @@ function FlowingParticles({ isActive, segmentIndex }: { isActive: boolean; segme
 }
 
 export function AgentPipeline() {
-  const [activeAgent, setActiveAgent] = useState(0)
-  const [progress, setProgress] = useState(0)
+  const { status, isConnected } = usePipeline()
+  const [demoProgress, setDemoProgress] = useState(0)
 
+  const isRunning = status?.status === "running"
+  const isFailed = status?.status === "failed"
+  const backendProgress = status?.progress ?? 0
+  const activeAgent = status
+    ? getActiveAgentIndex(status.current_agent, status.status)
+    : -1
+
+  // Subtle animation between backend poll ticks while running
   useEffect(() => {
+    if (!isRunning) {
+      setDemoProgress(0)
+      return
+    }
     const interval = setInterval(() => {
-      setActiveAgent((prev) => (prev + 1) % agents.length)
-    }, 3500)
+      setDemoProgress((prev) => (prev >= 95 ? 0 : prev + 5))
+    }, 200)
     return () => clearInterval(interval)
-  }, [])
+  }, [isRunning, backendProgress])
 
-  useEffect(() => {
-    setProgress(0)
-    const progressInterval = setInterval(() => {
-      setProgress((prev) => Math.min(prev + 2, 100))
-    }, 60)
-    return () => clearInterval(progressInterval)
-  }, [activeAgent])
+  const displayProgress = isRunning
+    ? Math.min(backendProgress + demoProgress * 0.05, 99)
+    : backendProgress
+
+  const statusBadge = isFailed
+    ? "Failed"
+    : isRunning
+      ? "Running"
+      : status?.status === "completed"
+        ? "Completed"
+        : isConnected
+          ? "Idle"
+          : "Offline"
 
   return (
     <motion.section
@@ -159,7 +179,7 @@ export function AgentPipeline() {
               style={{ background: "oklch(0.5 0.15 160)" }}
             />
           </span>
-          Running
+          {statusBadge}
         </motion.div>
       </div>
 
@@ -204,8 +224,9 @@ export function AgentPipeline() {
         {/* Agent Nodes */}
         <div className="relative flex items-center justify-between px-4" style={{ zIndex: 10 }}>
           {agents.map((agent, index) => {
-            const isActive = index === activeAgent
-            const isCompleted = index < activeAgent
+            const isActive = isRunning && index === activeAgent
+            const isCompleted =
+              isRunning ? index < activeAgent : displayProgress >= 100 && activeAgent >= agents.length
             const Icon = agent.icon
 
             return (
@@ -312,7 +333,9 @@ export function AgentPipeline() {
                       className="absolute -bottom-8 whitespace-nowrap text-xs font-medium"
                       style={{ color: "oklch(0.5 0.08 260)" }}
                     >
-                      {agent.status}
+                      {isRunning && status?.current_agent === agent.id
+                        ? `${agent.name} running…`
+                        : agent.status}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -338,7 +361,7 @@ export function AgentPipeline() {
       <div className="mt-14">
         <div className="flex items-center justify-between text-xs font-medium mb-2">
           <span style={{ color: "oklch(0.5 0.05 280)" }}>Pipeline Progress</span>
-          <span style={{ color: "oklch(0.45 0.08 260)" }}>{Math.round(((activeAgent + progress / 100) / agents.length) * 100)}%</span>
+          <span style={{ color: "oklch(0.45 0.08 260)" }}>{Math.round(displayProgress)}%</span>
         </div>
         <div 
           className="h-2 rounded-full overflow-hidden"
@@ -354,7 +377,7 @@ export function AgentPipeline() {
               boxShadow: "0 0 12px oklch(0.6 0.2 260 / 0.4)",
             }}
             initial={{ width: "0%" }}
-            animate={{ width: `${((activeAgent + progress / 100) / agents.length) * 100}%` }}
+            animate={{ width: `${displayProgress}%` }}
             transition={{ duration: 0.3, ease: "linear" }}
           >
             {/* Shimmer effect */}

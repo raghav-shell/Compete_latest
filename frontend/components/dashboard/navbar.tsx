@@ -1,11 +1,34 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { Sparkles, Clock, ChevronDown } from "lucide-react"
+import { Sparkles, Clock, ChevronDown, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { usePipeline } from "@/providers/pipeline-provider"
+import { formatRelativeTime } from "@/lib/pipeline-utils"
 
 export function Navbar() {
+  const { status, runs, isConnected, isTriggering, triggerAnalysis } = usePipeline()
+
+  const pipelineLabel =
+    status?.status === "running"
+      ? "Pipeline Active"
+      : status?.status === "failed"
+        ? "Pipeline Failed"
+        : status?.status === "completed"
+          ? "Last Run Complete"
+          : isConnected
+            ? "Ready"
+            : "Backend Offline"
+
+  const statusColor =
+    status?.status === "running"
+      ? "oklch(0.55 0.18 160)"
+      : status?.status === "failed"
+        ? "oklch(0.6 0.2 50)"
+        : isConnected
+          ? "oklch(0.55 0.12 250)"
+          : "oklch(0.55 0.05 280)"
   return (
     <motion.header
       initial={{ y: -30, opacity: 0 }}
@@ -85,19 +108,23 @@ export function Navbar() {
               <span className="relative flex h-2.5 w-2.5">
                 <motion.span 
                   className="absolute inline-flex h-full w-full rounded-full"
-                  style={{ background: "oklch(0.6 0.18 160)" }}
-                  animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
+                  style={{ background: statusColor }}
+                  animate={
+                    status?.status === "running"
+                      ? { scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }
+                      : {}
+                  }
                   transition={{ duration: 2, repeat: Infinity }}
                 />
                 <span 
                   className="relative inline-flex rounded-full h-2.5 w-2.5"
                   style={{ 
-                    background: "oklch(0.55 0.18 160)",
-                    boxShadow: "0 0 8px oklch(0.55 0.18 160 / 0.5)",
+                    background: statusColor,
+                    boxShadow: `0 0 8px ${statusColor} / 0.5`,
                   }}
                 />
               </span>
-              <span style={{ color: "oklch(0.45 0.05 280)" }}>Pipeline Active</span>
+              <span style={{ color: "oklch(0.45 0.05 280)" }}>{pipelineLabel}</span>
             </motion.div>
 
             {/* Separator */}
@@ -106,7 +133,9 @@ export function Navbar() {
             {/* Last Run */}
             <div className="flex items-center gap-2 text-sm" style={{ color: "oklch(0.5 0.03 280)" }}>
               <Clock className="w-4 h-4" />
-              <span className="font-medium">Last run 2m ago</span>
+              <span className="font-medium">
+                Last run {formatRelativeTime(runs[0]?.date ?? status?.started_at ?? null)}
+              </span>
             </div>
           </div>
 
@@ -117,8 +146,10 @@ export function Navbar() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
             >
-              <Button 
-                className="relative overflow-hidden border-0 px-5 py-2.5 h-auto text-white font-semibold"
+              <Button
+                onClick={() => void triggerAnalysis()}
+                disabled={isTriggering || status?.status === "running" || !isConnected}
+                className="relative overflow-hidden border-0 px-5 py-2.5 h-auto text-white font-semibold disabled:opacity-60"
                 style={{
                   background: "linear-gradient(135deg, oklch(0.55 0.2 260), oklch(0.6 0.18 230))",
                   boxShadow: `
@@ -129,8 +160,12 @@ export function Navbar() {
                 }}
               >
                 <span className="relative z-10 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" />
-                  Run Analysis
+                  {isTriggering || status?.status === "running" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  {status?.status === "running" ? "Running…" : "Run Analysis"}
                 </span>
                 {/* Animated shimmer */}
                 <motion.div 

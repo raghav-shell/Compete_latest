@@ -20,6 +20,8 @@ build/
 .ruff_cache/
 htmlcov/
 .coverage
+*.db
+*.sqlite
 
 # Frontend (Node/Next.js)
 node_modules/

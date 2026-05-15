@@ -53,6 +53,7 @@ class PipelineRunner:
                         (f"Running {node_name}...", 50),
                     )
                     update_state("current_step", label)
+                    update_state("current_agent", node_name)
                     update_state("progress", progress)
                     final_state = dict(node_output)
                     logger.info(
@@ -74,7 +75,34 @@ class PipelineRunner:
                 },
             )
 
-            record_run(run_id, competitors, "success")
+            signals = final_state.get("signals") or {}
+            signals_found = sum(
+                len(v) for v in signals.values() if isinstance(v, list)
+            )
+            report_urls = final_state.get("report_urls") or {}
+            notion_url = next(iter(report_urls.values()), None)
+            analysis = final_state.get("analysis") or {}
+            slack_lines = [
+                f"Competitive Intel — {len(competitors)} competitors",
+            ]
+            for name in competitors:
+                comp_analysis = analysis.get(name) or {}
+                if isinstance(comp_analysis, dict):
+                    text = comp_analysis.get("top_insight", "")[:120]
+                else:
+                    text = str(comp_analysis)[:120]
+                if text:
+                    slack_lines.append(f"• {name}: {text}")
+            slack_message = "\n".join(slack_lines)
+
+            record_run(
+                run_id,
+                competitors,
+                "completed",
+                signals_found=signals_found,
+                notion_url=notion_url,
+                slack_message=slack_message,
+            )
 
             return {
                 "run_id": run_id,
@@ -83,5 +111,5 @@ class PipelineRunner:
             }
 
         except Exception as exc:
-            record_run(run_id, competitors, "error", str(exc))
+            record_run(run_id, competitors, "failed", error_message=str(exc))
             raise

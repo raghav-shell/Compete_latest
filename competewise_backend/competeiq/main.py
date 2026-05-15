@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from competeiq.api import runs_router, schedule_router, webhook_router
+from competeiq.api import dashboard_router, runs_router, schedule_router, webhook_router
 from competeiq.scheduler import shutdown_scheduler, start_scheduler
 from competeiq.config import get_settings
 from competeiq.state import get_status_response
@@ -93,6 +93,7 @@ def create_app() -> FastAPI:
         """
         return get_status_response()
 
+    app.include_router(dashboard_router)
     app.include_router(webhook_router)
     app.include_router(schedule_router)
     app.include_router(runs_router)
