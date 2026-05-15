@@ -12,6 +12,7 @@ const navItems = [
   { id: "reports", icon: FileText, label: "Reports" },
   { id: "runs", icon: Play, label: "Runs" },
   { id: "traces", icon: Activity, label: "Traces" },
+  { id: "settings", icon: Settings, label: "Settings" },
 ]
 
 export function Sidebar() {

@@ -164,3 +164,37 @@ export const fetchRunHistory = fetchRuns
 export const triggerPipeline = startRun
 
 export { DEFAULT_COMPETITORS, ApiError }
+
+
+// ---------------------------------------------------------------------------
+// User Integration Settings
+// ---------------------------------------------------------------------------
+
+export interface SettingValue {
+  value: string
+  source: "user" | "default" | "none"
+  configured: boolean
+}
+
+export interface SettingsResponse {
+  slack_webhook_url: SettingValue
+  omium_api_key: SettingValue
+}
+
+export async function fetchSettings(): Promise<SettingsResponse> {
+  return request<SettingsResponse>("/settings")
+}
+
+export async function updateSettings(body: {
+  slack_webhook_url?: string
+  omium_api_key?: string
+}): Promise<{ status: string; fields: string }> {
+  return request("/settings", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  })
+}
+
+export async function testSlackConnection(): Promise<{ status: string; message: string }> {
+  return request("/settings/test-slack", { method: "POST" })
+}

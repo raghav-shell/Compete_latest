@@ -20,8 +20,12 @@ async def notifier_agent(state: GraphState) -> GraphState:
     """
     settings = get_settings()
 
-    if not settings.slack_webhook_url:
-        logger.warning("Notifier: SLACK_WEBHOOK_URL not set, skipping notification")
+    # Read user-configured Slack webhook first, fall back to .env default
+    from competeiq.db import get_user_setting
+    webhook_url = get_user_setting("slack_webhook_url") or settings.slack_webhook_url
+
+    if not webhook_url:
+        logger.warning("Notifier: No Slack webhook URL configured, skipping notification")
         return state
 
     if not settings.g0i_api_key:
@@ -55,7 +59,7 @@ Return ONLY valid Slack Block Kit JSON. The root object must have a "blocks" arr
         
         payload = json.loads(response_text)
         
-        slack_service = SlackService(settings.slack_webhook_url)
+        slack_service = SlackService(webhook_url)
         success = await slack_service.send_competitive_brief(payload)
 
         state["slack_sent"] = success

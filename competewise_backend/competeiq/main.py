@@ -31,10 +31,12 @@ async def lifespan(app: FastAPI):
         },
     )
     
-    # Initialize Omium Observability
-    if settings.omium_api_key:
+    # Initialize Omium Observability (user setting takes priority over .env)
+    from competeiq.db import get_user_setting
+    omium_key = get_user_setting("omium_api_key") or settings.omium_api_key
+    if omium_key:
         import omium
-        omium.init(api_key=settings.omium_api_key)
+        omium.init(api_key=omium_key)
         omium.instrument_langgraph()
         logger.info("Omium observability initialized")
     else:

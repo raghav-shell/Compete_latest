@@ -6,9 +6,20 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { usePipeline } from "@/providers/pipeline-provider"
 import { formatRelativeTime } from "@/lib/pipeline-utils"
+import { useAuth } from "@/providers/auth-provider"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { LogOut, User as UserIcon } from "lucide-react"
 
 export function Navbar() {
   const { status, runs, isConnected, isTriggering, triggerAnalysis } = usePipeline()
+  const { user, signOut } = useAuth()
 
   const pipelineLabel =
     status?.status === "running"
@@ -188,21 +199,42 @@ export function Navbar() {
             </motion.div>
 
             {/* Profile */}
-            <motion.div 
-              className="flex items-center gap-2.5 cursor-pointer rounded-xl px-2.5 py-2 transition-all"
-              style={{ 
-                background: "transparent",
-              }}
-              whileHover={{ 
-                background: "oklch(0.95 0.01 280)",
-              }}
-            >
-              <Avatar className="w-8 h-8 ring-2 ring-offset-1" style={{ ringColor: "oklch(0.92 0.03 260)" }}>
-                <AvatarImage src="https://avatar.vercel.sh/competeiq" />
-                <AvatarFallback style={{ background: "linear-gradient(135deg, oklch(0.9 0.05 260), oklch(0.92 0.04 200))" }}>CQ</AvatarFallback>
-              </Avatar>
-              <ChevronDown className="w-4 h-4" style={{ color: "oklch(0.5 0.03 280)" }} />
-            </motion.div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <motion.div 
+                  className="flex items-center gap-2.5 cursor-pointer rounded-xl px-2.5 py-2 transition-all"
+                  style={{ 
+                    background: "transparent",
+                  }}
+                  whileHover={{ 
+                    background: "oklch(0.95 0.01 280)",
+                  }}
+                >
+                  <Avatar className="w-8 h-8 ring-2 ring-offset-1" style={{ ringColor: "oklch(0.92 0.03 260)" }}>
+                    <AvatarImage src={`https://avatar.vercel.sh/${user?.email ?? 'competeiq'}`} />
+                    <AvatarFallback style={{ background: "linear-gradient(135deg, oklch(0.9 0.05 260), oklch(0.92 0.04 200))" }}>
+                      {user?.email?.charAt(0).toUpperCase() || "CQ"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <ChevronDown className="w-4 h-4" style={{ color: "oklch(0.5 0.03 280)" }} />
+                </motion.div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 font-sans">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">Account</p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user?.email}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="cursor-pointer" onClick={() => void signOut()}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Sign out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

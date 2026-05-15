@@ -213,3 +213,115 @@ async def sse_events():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# User Integration Settings
+# ---------------------------------------------------------------------------
+
+# Keys that users are allowed to configure
+_ALLOWED_SETTINGS = {"slack_webhook_url", "omium_api_key"}
+
+
+def _mask_value(value: str) -> str:
+    """Mask a secret value for display: show first 10 + last 4 chars."""
+    if len(value) <= 16:
+        return value[:4] + "•" * (len(value) - 4)
+    return value[:10] + "•" * 6 + value[-4:]
+
+
+class UpdateSettingsRequest(BaseModel):
+    """Body for PUT /settings."""
+    slack_webhook_url: Optional[str] = None
+    omium_api_key: Optional[str] = None
+
+
+@router.get("/settings", summary="Get current integration settings")
+async def get_settings_endpoint() -> dict[str, Any]:
+    """Return the current integration settings with masked values."""
+    from competeiq.db import get_all_user_settings
+
+    settings = get_settings()
+    user_settings = get_all_user_settings()
+
+    def _resolve(key: str, env_fallback: str) -> dict[str, Any]:
+        user_val = user_settings.get(key)
+        if user_val:
+            return {"value": _mask_value(user_val), "source": "user", "configured": True}
+        if env_fallback:
+            return {"value": _mask_value(env_fallback), "source": "default", "configured": True}
+        return {"value": "", "source": "none", "configured": False}
+
+    return {
+        "slack_webhook_url": _resolve("slack_webhook_url", settings.slack_webhook_url),
+        "omium_api_key": _resolve("omium_api_key", settings.omium_api_key),
+    }
+
+
+@router.put("/settings", summary="Update integration settings")
+async def update_settings_endpoint(body: UpdateSettingsRequest) -> dict[str, str]:
+    """Upsert one or more user integration settings."""
+    from competeiq.db import set_user_setting
+
+    updated = []
+
+    if body.slack_webhook_url is not None:
+        val = body.slack_webhook_url.strip()
+        if val:
+            set_user_setting("slack_webhook_url", val)
+            updated.append("slack_webhook_url")
+        else:
+            # Empty string = delete / revert to default
+            try:
+                from competeiq.db import get_supabase
+                get_supabase().table("user_settings").delete().eq("key", "slack_webhook_url").execute()
+                updated.append("slack_webhook_url (reset to default)")
+            except Exception:
+                pass
+
+    if body.omium_api_key is not None:
+        val = body.omium_api_key.strip()
+        if val:
+            set_user_setting("omium_api_key", val)
+            updated.append("omium_api_key")
+        else:
+            try:
+                from competeiq.db import get_supabase
+                get_supabase().table("user_settings").delete().eq("key", "omium_api_key").execute()
+                updated.append("omium_api_key (reset to default)")
+            except Exception:
+                pass
+
+    return {"status": "updated", "fields": ", ".join(updated) if updated else "none"}
+
+
+@router.post("/settings/test-slack", summary="Send a test Slack message")
+async def test_slack_connection() -> dict[str, Any]:
+    """Send a test message to the configured Slack webhook."""
+    from competeiq.db import get_user_setting
+    from competeiq.services.slack_service import SlackService
+
+    settings = get_settings()
+    webhook_url = get_user_setting("slack_webhook_url") or settings.slack_webhook_url
+
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="No Slack webhook URL configured")
+
+    slack = SlackService(webhook_url)
+    payload = {
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "✅ *CompeteIQ Test* — Your Slack integration is working!"
+                }
+            }
+        ]
+    }
+    success = await slack.send_competitive_brief(payload)
+
+    if success:
+        return {"status": "success", "message": "Test message sent to Slack!"}
+    raise HTTPException(status_code=502, detail="Failed to send test message to Slack")
+

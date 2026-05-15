@@ -200,3 +200,47 @@ def save_snapshot(competitor: str, snapshot_json: str) -> None:
         }
     ).execute()
     logger.info("Saved snapshot for %s to Supabase", competitor)
+
+
+# ---------------------------------------------------------------------------
+# User settings (dynamic integrations)
+# ---------------------------------------------------------------------------
+
+
+def get_user_setting(key: str) -> str | None:
+    """Fetch a single user setting by key. Returns None if not found."""
+    try:
+        sb = get_supabase()
+        response = (
+            sb.table("user_settings")
+            .select("value")
+            .eq("key", key)
+            .limit(1)
+            .execute()
+        )
+        if response.data:
+            return response.data[0]["value"]
+    except Exception as exc:
+        logger.warning("Failed to read user setting '%s': %s", key, exc)
+    return None
+
+
+def get_all_user_settings() -> dict[str, str]:
+    """Fetch all user settings as a dict."""
+    try:
+        sb = get_supabase()
+        response = sb.table("user_settings").select("key, value").execute()
+        return {row["key"]: row["value"] for row in (response.data or [])}
+    except Exception as exc:
+        logger.warning("Failed to read user settings: %s", exc)
+        return {}
+
+
+def set_user_setting(key: str, value: str) -> None:
+    """Upsert a user setting."""
+    sb = get_supabase()
+    sb.table("user_settings").upsert(
+        {"key": key, "value": value},
+        on_conflict="key",
+    ).execute()
+    logger.info("Saved user setting '%s'", key)

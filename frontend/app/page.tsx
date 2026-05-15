@@ -5,6 +5,7 @@ import { CompetitorCards } from "@/components/dashboard/competitor-cards"
 import { SlackPreview } from "@/components/dashboard/slack-preview"
 import { RunHistory } from "@/components/dashboard/run-history"
 import { TraceCard } from "@/components/dashboard/trace-card"
+import { SettingsPanel } from "@/components/dashboard/settings-panel"
 import { Background } from "@/components/dashboard/background"
 import { PipelineProvider } from "@/providers/pipeline-provider"
 
@@ -51,6 +52,22 @@ export default function Dashboard() {
                 <RunHistory />
                 <TraceCard />
                 <SlackPreview />
+              </div>
+            </section>
+
+            {/* Section 4: Integrations */}
+            <section id="settings" className="relative">
+              <div className="absolute -top-10 left-0 right-0 h-px" style={{ background: "linear-gradient(90deg, transparent, oklch(0.9 0.05 280 / 0.5), transparent)" }} />
+              <div className="mb-6 px-2">
+                <h3 className="text-xl font-semibold mb-1" style={{ letterSpacing: "-0.02em" }}>
+                  Integrations
+                </h3>
+                <p className="text-sm font-medium" style={{ color: "oklch(0.5 0.03 280)" }}>
+                  Connect your own Slack workspace and Omium dashboard
+                </p>
+              </div>
+              <div className="max-w-xl">
+                <SettingsPanel />
               </div>
             </section>
 
