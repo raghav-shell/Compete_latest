@@ -22,7 +22,6 @@ export function Background() {
         className="absolute top-[-15%] right-[-8%] w-[700px] h-[700px] rounded-full"
         style={{
           background: "radial-gradient(circle at 30% 30%, oklch(0.88 0.08 280 / 0.5) 0%, oklch(0.85 0.06 260 / 0.2) 40%, transparent 70%)",
-          filter: "blur(40px)",
         }}
         animate={{
           x: [0, 40, 0],
@@ -41,7 +40,6 @@ export function Background() {
         className="absolute bottom-[-12%] left-[-8%] w-[600px] h-[600px] rounded-full"
         style={{
           background: "radial-gradient(circle at 70% 70%, oklch(0.8 0.12 200 / 0.35) 0%, oklch(0.85 0.08 210 / 0.15) 40%, transparent 65%)",
-          filter: "blur(50px)",
         }}
         animate={{
           x: [0, -30, 0],
@@ -60,7 +58,6 @@ export function Background() {
         className="absolute top-[35%] left-[15%] w-[450px] h-[450px] rounded-full"
         style={{
           background: "radial-gradient(circle, oklch(0.75 0.1 260 / 0.2) 0%, transparent 60%)",
-          filter: "blur(60px)",
         }}
         animate={{
           x: [0, 50, 0],
@@ -78,7 +75,6 @@ export function Background() {
         className="absolute top-[10%] left-[40%] w-[500px] h-[300px] rounded-full"
         style={{
           background: "radial-gradient(ellipse, oklch(0.95 0.03 270 / 0.6) 0%, transparent 60%)",
-          filter: "blur(40px)",
         }}
         animate={{
           x: [0, -20, 0],
@@ -140,13 +136,7 @@ export function Background() {
         }}
       />
 
-      {/* Noise texture overlay - very subtle */}
-      <div 
-        className="absolute inset-0 opacity-[0.012]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-        }}
-      />
+        /* Noise texture removed for performance */
 
       {/* Vignette effect */}
       <div 

@@ -52,9 +52,10 @@ export function Navbar() {
         <div 
           className="rounded-2xl px-6 py-3.5 flex items-center justify-between relative overflow-hidden"
           style={{
-            background: "linear-gradient(135deg, oklch(0.995 0.005 280 / 0.85) 0%, oklch(0.99 0.008 270 / 0.8) 100%)",
-            backdropFilter: "blur(40px)",
-            border: "1px solid oklch(0.94 0.02 280 / 0.6)",
+            background: "linear-gradient(180deg, oklch(0.995 0.005 280 / 0.95) 0%, oklch(0.99 0.008 270 / 0.85) 100%)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            borderBottom: "1px solid oklch(0.92 0.03 280 / 0.6)",
             boxShadow: `
               0 0 0 1px oklch(1 0 0 / 0.05) inset,
               0 8px 32px oklch(0.5 0.1 260 / 0.08),

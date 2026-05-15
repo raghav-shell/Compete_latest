@@ -14,61 +14,7 @@ const agents = [
   { id: "notifier", name: "Notifier", icon: Bell, status: "Sending updates...", color: "from-blue-400 to-indigo-500" },
 ]
 
-interface Particle {
-  id: number
-  startX: number
-  endX: number
-  delay: number
-  duration: number
-}
-
-function FlowingParticles({ isActive, segmentIndex }: { isActive: boolean; segmentIndex: number }) {
-  const [particles, setParticles] = useState<Particle[]>([])
-  
-  useEffect(() => {
-    if (isActive) {
-      const newParticles = Array.from({ length: 6 }, (_, i) => ({
-        id: i,
-        startX: 0,
-        endX: 100,
-        delay: i * 0.15,
-        duration: 1.2,
-      }))
-      setParticles(newParticles)
-    } else {
-      setParticles([])
-    }
-  }, [isActive])
-
-  if (!isActive) return null
-
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {particles.map((particle) => (
-        <motion.div
-          key={particle.id}
-          className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full"
-          style={{
-            background: "radial-gradient(circle, oklch(0.75 0.15 200) 0%, oklch(0.6 0.2 260) 100%)",
-            boxShadow: "0 0 8px oklch(0.75 0.15 200), 0 0 16px oklch(0.6 0.2 260 / 0.5)",
-          }}
-          initial={{ left: "0%", opacity: 0, scale: 0.5 }}
-          animate={{ 
-            left: "100%", 
-            opacity: [0, 1, 1, 0],
-            scale: [0.5, 1, 1, 0.5],
-          }}
-          transition={{
-            duration: particle.duration,
-            delay: particle.delay,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-        />
-      ))}
-    </div>
-  )
-}
+// Removed expensive FlowingParticles to improve performance
 
 export function AgentPipeline() {
   const { status, isConnected } = usePipeline()
@@ -115,7 +61,8 @@ export function AgentPipeline() {
       className="relative rounded-[2rem] p-10 overflow-hidden"
       style={{
         background: "linear-gradient(135deg, oklch(0.99 0.005 280 / 0.9) 0%, oklch(0.98 0.01 260 / 0.85) 100%)",
-        backdropFilter: "blur(40px)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
         border: "1px solid oklch(0.92 0.03 280 / 0.6)",
         boxShadow: `
           0 0 0 1px oklch(1 0 0 / 0.1) inset,
@@ -204,18 +151,15 @@ export function AgentPipeline() {
                 
                 {/* Active gradient line */}
                 <motion.div 
-                  className="absolute inset-y-0 left-0 h-[2px] top-1/2 -translate-y-1/2 rounded-full"
+                  className="absolute inset-y-0 left-0 w-full h-[2px] top-1/2 -translate-y-1/2 rounded-full origin-left"
                   style={{
                     background: "linear-gradient(90deg, oklch(0.6 0.2 260), oklch(0.75 0.15 200))",
                     boxShadow: isActive ? "0 0 12px oklch(0.6 0.2 260 / 0.5)" : "none",
                   }}
-                  initial={{ width: "0%" }}
-                  animate={{ width: isActive ? "100%" : "0%" }}
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: isActive ? 1 : 0 }}
                   transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                 />
-
-                {/* Flowing particles */}
-                <FlowingParticles isActive={isAnimating} segmentIndex={index} />
               </div>
             )
           })}

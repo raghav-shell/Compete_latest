@@ -22,7 +22,8 @@ export function SlackPreview() {
       className="relative rounded-[1.5rem] p-6 overflow-hidden h-full"
       style={{
         background: "linear-gradient(145deg, oklch(0.995 0.005 280 / 0.9) 0%, oklch(0.99 0.008 270 / 0.85) 100%)",
-        backdropFilter: "blur(40px)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
         border: "1px solid oklch(0.93 0.025 280 / 0.5)",
       }}
     >
@@ -57,7 +58,7 @@ export function SlackPreview() {
         }}
       >
         <p className="text-sm font-semibold mb-2">Weekly Competitive Summary</p>
-        <p className="text-sm leading-relaxed whitespace-pre-line text-muted-foreground">
+        <p className="text-sm leading-relaxed whitespace-pre-line text-muted-foreground break-words break-all">
           {summary}
         </p>
         {latest && (
