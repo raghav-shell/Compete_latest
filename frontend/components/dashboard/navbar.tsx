@@ -17,9 +17,22 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { LogOut, User as UserIcon } from "lucide-react"
 
+const DEFAULT_AVATARS = [
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&h=100&fit=crop", // Liquid abstract
+  "https://images.unsplash.com/photo-1614729939124-032f0b56c9ce?w=100&h=100&fit=crop", // Space abstract
+  "https://images.unsplash.com/photo-1634152962476-4b8a00e1915c?w=100&h=100&fit=crop", // Glass abstract
+  "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=100&h=100&fit=crop", // Cyberpunk abstract
+]
+
 export function Navbar() {
   const { status, runs, isConnected, isTriggering, triggerAnalysis } = usePipeline()
   const { user, signOut } = useAuth()
+
+  // Deterministically pick an avatar based on email length/characters
+  const avatarIndex = user?.email
+    ? user.email.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0) % DEFAULT_AVATARS.length
+    : 0
+  const profileImage = DEFAULT_AVATARS[avatarIndex]
 
   const pipelineLabel =
     status?.status === "running"
@@ -211,7 +224,7 @@ export function Navbar() {
                   }}
                 >
                   <Avatar className="w-8 h-8 ring-2 ring-offset-1" style={{ ringColor: "oklch(0.92 0.03 260)" }}>
-                    <AvatarImage src={`https://avatar.vercel.sh/${user?.email ?? 'competeiq'}`} />
+                    <AvatarImage src={profileImage} />
                     <AvatarFallback style={{ background: "linear-gradient(135deg, oklch(0.9 0.05 260), oklch(0.92 0.04 200))" }}>
                       {user?.email?.charAt(0).toUpperCase() || "CQ"}
                     </AvatarFallback>
