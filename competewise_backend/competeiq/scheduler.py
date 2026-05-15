@@ -15,7 +15,7 @@ from competeiq.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-DEFAULT_COMPETITORS: list[str] = ["Linear", "Notion"]
+DEFAULT_COMPETITORS: list[str] = []
 SCHEDULED_JOB_ID = "scheduled_pipeline_run"
 
 scheduler = AsyncIOScheduler()

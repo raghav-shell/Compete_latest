@@ -10,7 +10,7 @@ import type {
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "/api-backend"
 
-const DEFAULT_COMPETITORS = ["linear.app", "notion.so", "vercel.com"]
+const DEFAULT_COMPETITORS: string[] = []
 
 class ApiError extends Error {
   constructor(
