@@ -294,8 +294,15 @@ def get_spec_run_history(limit: int = 10) -> list[dict[str, Any]]:
 def add_tracked_competitor(domain: str) -> dict[str, Any]:
     """Add a competitor domain to the tracking list. Returns the new record."""
     from competeiq.db import insert_competitor
+    import re
 
+    # Robust URL sanitization
     domain = domain.strip().lower()
+    # Strip protocol
+    domain = re.sub(r"^(https?://)?(www\.)?", "", domain)
+    # Strip paths, queries, fragments
+    domain = domain.split("/")[0].split("?")[0].split("#")[0]
+
     display_name = _display_name(domain)
     return insert_competitor(domain, display_name)
 

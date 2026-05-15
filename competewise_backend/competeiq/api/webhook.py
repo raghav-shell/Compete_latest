@@ -5,11 +5,11 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from competeiq.pipeline.runner import PipelineRunner
-from competeiq.state import start_run, update_state
+from competeiq.state import start_run, update_state, get_state
 from competeiq.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -82,6 +82,14 @@ async def trigger_pipeline(
     Accepts ``{"competitors": ["Linear", "Notion"], "force": false}`` and
     returns immediately with a ``run_id``. The pipeline runs in the background.
     """
+    if not request.force:
+        current_state = get_state()
+        if current_state.get("status") == "running":
+            raise HTTPException(
+                status_code=409,
+                detail="Pipeline is already running. Use force=true to override."
+            )
+
     run_id = str(uuid.uuid4())
     start_run(run_id, request.competitors)
 
