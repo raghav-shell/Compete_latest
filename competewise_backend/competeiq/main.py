@@ -30,6 +30,16 @@ async def lifespan(app: FastAPI):
             "cors_origins": settings.cors_origins_list,
         },
     )
+    
+    # Initialize Omium Observability
+    if settings.omium_api_key:
+        import omium
+        omium.init(api_key=settings.omium_api_key)
+        omium.instrument_langgraph()
+        logger.info("Omium observability initialized")
+    else:
+        logger.warning("Omium API key not found, tracing disabled")
+
     start_scheduler()
     yield
     shutdown_scheduler()

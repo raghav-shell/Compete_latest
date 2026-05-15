@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     notion_database_id: str = ""
     supabase_url: str = ""
     supabase_key: str = ""
+    omium_api_key: str = ""
     debug: bool = False
     ngrok_authtoken: str = ""
     competitors: str = "linear.app,notion.so,vercel.com"
