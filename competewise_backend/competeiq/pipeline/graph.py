@@ -12,6 +12,7 @@ import google.generativeai as genai
 
 from competeiq.config import get_settings
 from competeiq.pipeline.state import GraphState, create_initial_state
+from competeiq.utils.llm import generate_with_retry
 
 # ---------------------------------------------------------------------------
 # SECTION 1: Imports (stdlib + third-party; config via competeiq.config)
@@ -45,12 +46,21 @@ async def scout_agent(state: GraphState) -> GraphState:
 
     async def _crawl_one(competitor: str) -> tuple[str, dict, str | None]:
         try:
-            queries = [
-                f"{competitor} website features",
-                f"{competitor} changelog recent updates",
-                f"{competitor} pricing plans",
-                f"{competitor} jobs hiring",
-            ]
+            is_reflection = state.get("reflection_count", 0) > 0
+            if is_reflection:
+                queries = [
+                    f"{competitor} recent news deep dive",
+                    f"{competitor} unexpected changes or leaks",
+                    f"{competitor} detailed product reviews",
+                ]
+                logger.info("Scout: Running deeper reflection queries for %s", competitor)
+            else:
+                queries = [
+                    f"{competitor} website features",
+                    f"{competitor} changelog recent updates",
+                    f"{competitor} pricing plans",
+                    f"{competitor} jobs hiring",
+                ]
             combined_content = ""
             # Tavily searches concurrently
             async def _search(q: str) -> str:
@@ -80,7 +90,8 @@ If nothing is found for a category, return an empty list. Be factual. Do not inv
 
             logger.info("Scout: Generating structured JSON for %s", competitor)
             response = await asyncio.to_thread(
-                model.generate_content,
+                generate_with_retry,
+                model,
                 prompt,
                 generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
             )
@@ -148,7 +159,8 @@ Return ONLY a JSON array of objects (no markdown, no backticks).
 Each object must have these exact keys: "change_type", "description", "significance" (high, medium, or low), "reasoning".
 If nothing meaningful changed, return an empty array []."""
             
-            response = model.generate_content(
+            response = generate_with_retry(
+                model,
                 prompt,
                 generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
             )

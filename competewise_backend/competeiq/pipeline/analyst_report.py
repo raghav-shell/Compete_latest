@@ -12,6 +12,7 @@ from notion_client import Client as NotionClient
 
 from competeiq.config import Settings, get_settings
 from competeiq.pipeline.state import GraphState
+from competeiq.utils.llm import generate_with_retry
 
 # ---------------------------------------------------------------------------
 # SECTION 1: Imports
@@ -81,7 +82,8 @@ Return ONLY a valid JSON object (no markdown, no backticks) with exactly these k
             logger.info("Analyst: Thinking about %s...", c)
 
             def call_gemini() -> str:
-                response = model.generate_content(
+                response = generate_with_retry(
+                    model,
                     prompt,
                     generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
                 )
@@ -298,7 +300,7 @@ Do NOT use bold or italics markers (no ** or *), just plain text structure.
 Keep it concise and strategic."""
 
             def call_gemini() -> str:
-                response = model.generate_content(prompt)
+                response = generate_with_retry(model, prompt)
                 return response.text if response.text else "No report generated."
 
             markdown_text = await asyncio.to_thread(call_gemini)
