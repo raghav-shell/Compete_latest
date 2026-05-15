@@ -6,6 +6,7 @@ export type CurrentAgent =
   | "scout"
   | "signal"
   | "analyst"
+  | "evaluator"
   | "report"
   | "notifier"
   | "done"
