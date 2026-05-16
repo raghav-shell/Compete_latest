@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_key: str = ""
     omium_api_key: str = ""
+    omium_api_url: str = "https://api.omium.ai"
+    omium_project: str = "production"
     debug: bool = False
     ngrok_authtoken: str = ""
     competitors: str = "linear.app,notion.so,vercel.com"

@@ -36,7 +36,11 @@ async def lifespan(app: FastAPI):
     omium_key = get_user_setting("omium_api_key") or settings.omium_api_key
     if omium_key:
         import omium
-        omium.init(api_key=omium_key)
+        omium.init(
+            api_key=omium_key,
+            project=settings.omium_project,
+            api_base_url=settings.omium_api_url
+        )
         omium.instrument_langgraph()
         logger.info("Omium observability initialized")
     else:
